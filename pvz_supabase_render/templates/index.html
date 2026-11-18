@@ -813,8 +813,7 @@
     let totalWaves = 5;
     let currentWave = 0;
     let flagWaves = [5];
-    let nextWaveTime = 18;
-    let firstSunflowerPlanted = false;
+    let nextWaveTime = 30.0;
     let lastRowSpawnTime = [-999, -999, -999, -999, -999];
     let lastSpawnedRow = -1;
 
@@ -881,12 +880,11 @@
       currentWave = 0;
       killedZombiesInDay = 0;
       levelTimer = 0;
-      firstSunflowerPlanted = false;
       lastRowSpawnTime = [-999, -999, -999, -999, -999];
       lastSpawnedRow = -1;
 
-      // Inicio de la partida: el primer zombi aparece entre 15 y 20 segundos
-      nextWaveTime = 15.0 + Math.random() * 5.0;
+      // Siempre dejar 30 segundos antes de que aparezca el primer zombi en todos los días
+      nextWaveTime = 30.0;
       skySunTimer = 10.0;
       ambientGroanTimer = 14.0;
 
@@ -945,7 +943,6 @@
       });
     }
 
-    // Selección inteligente de carril: evita repetir el mismo carril seguido y prioriza filas sin zombis recientes
     function pickSmartRow() {
       if (activeRows.length === 1) {
         const r = activeRows[0];
@@ -972,7 +969,6 @@
       const def = ZOMBIE_TYPES[typeId] || ZOMBIE_TYPES.common;
       const row = pickSmartRow();
       const baseSpeed = CELL_W / 4.7;
-      // Si es zombi de emboscada en bandera final, aparece saltándose las primeras casillas de la derecha
       const spawnX = isAmbush
         ? GRID_X + (6.3 + Math.random() * 1.2) * CELL_W
         : 985;
@@ -1009,7 +1005,6 @@
       }
     }
 
-    // Genera una oleada usando presupuesto de puntos
     function triggerNextWave() {
       currentWave++;
       const isFirstWave = currentWave === 1;
@@ -1027,7 +1022,6 @@
         playSound('zombie_spawn');
       }
 
-      // Cálculo de presupuesto de puntos para esta oleada
       let budget = 1;
       if (currentDay === 1) {
         budget = isFlagWave ? 2 : 1;
@@ -1040,7 +1034,6 @@
         if (isFlagWave) budget = Math.ceil(budget * 1.75);
       }
 
-      // Gastar el presupuesto en zombis según su costo interno (1, 2 o 4 puntos)
       let spawnIndex = 0;
       while (budget > 0) {
         let chosenType = 'common';
@@ -1062,7 +1055,6 @@
         spawnIndex++;
       }
 
-      // Zombi de emboscada en las oleadas con bandera cuando están activos los 5 carriles
       if (isFlagWave && currentDay >= 3) {
         pendingWaveSpawns.push({
           time: levelTimer + 1.4,
@@ -1071,7 +1063,6 @@
         });
       }
 
-      // Tiempo entre oleadas: 25 a 31 segundos
       nextWaveTime = levelTimer + 25.0 + Math.random() * 6.0;
     }
 
@@ -1133,12 +1124,10 @@
         skySunTimer = 10.0;
       }
 
-      // Disparo de nueva oleada por tiempo
       if (currentWave < totalWaves && levelTimer >= nextWaveTime) {
         triggerNextWave();
       }
 
-      // Procesar zombis escalonados de la oleada activa
       for (let i = pendingWaveSpawns.length - 1; i >= 0; i--) {
         const item = pendingWaveSpawns[i];
         if (levelTimer >= item.time) {
@@ -1147,7 +1136,6 @@
         }
       }
 
-      // Si eliminas a todos los zombis de la pantalla antes de tiempo, la siguiente oleada se adelanta
       if (
         currentWave > 0 &&
         currentWave < totalWaves &&
@@ -1573,7 +1561,6 @@
         ctx.fillText(ft.text, ft.x, ft.y);
       });
 
-      // Barra de progreso de oleadas con banderas
       const bx = 760, by = 590, bw = 210, bh = 18;
       ctx.fillStyle = '#1b1108';
       ctx.fillRect(bx, by, bw, bh);
@@ -1585,7 +1572,6 @@
       ctx.fillStyle = '#76ff03';
       ctx.fillRect(bx + bw * (1 - progress), by, bw * progress, bh);
 
-      // Dibujar banderas de oleadas gigantes
       flagWaves.forEach(fw => {
         const ratio = fw / Math.max(1, totalWaves);
         const fx = bx + bw * (1 - ratio);
@@ -1770,7 +1756,6 @@
         ctx.arc(2, -34 + sway, 1.8, 0, Math.PI * 2);
         ctx.fill();
 
-        // Protección: Cono o Cubo metálico
         if (z.armorType === 'cone' && z.armorHp > 0) {
           ctx.fillStyle = '#ff6d00';
           ctx.beginPath();
@@ -1872,14 +1857,6 @@
             const initialDelay = def.id === 'sunflower'
               ? 3.0 + Math.random() * 9.0
               : 0.7;
-
-            // Si plantas tu primer girasol antes de la primera oleada, el primer zombi se adelanta un poco
-            if (def.id === 'sunflower' && !firstSunflowerPlanted) {
-              firstSunflowerPlanted = true;
-              if (currentWave === 0 && (nextWaveTime - levelTimer) > 4.0) {
-                nextWaveTime = Math.max(levelTimer + 3.5, nextWaveTime - 3.5);
-              }
-            }
 
             grid[row][col] = {
               id: def.id,
