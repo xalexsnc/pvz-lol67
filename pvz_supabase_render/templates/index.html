@@ -752,9 +752,7 @@
     const COLS = 9;
     const ROWS = 5;
 
-    // Configuración recomendada de aparición
-    const MAX_SIMULTANEOUS_ZOMBIES = 5;
-    const WAVE_INTERVAL = 35.0;
+    // Tiempo de gracia inicial de 30s antes del primer zombi
     const INITIAL_GRACE_SECONDS = 30.0;
 
     const COOLDOWN_TIERS = {
@@ -786,10 +784,11 @@
       }
     };
 
+    // Presupuesto interno del juego original: Común = 1 pt, Caracono = 2 pts, Caracubo = 4 pts
     const ZOMBIE_TYPES = {
-      common: { id: 'common', hp: 270, armorType: null, armorHp: 0 },
-      conehead: { id: 'conehead', hp: 640, armorType: 'cone', armorHp: 370 },
-      buckethead: { id: 'buckethead', hp: 1370, armorType: 'bucket', armorHp: 1100 }
+      common: { id: 'common', cost: 1, hp: 270, armorType: null, armorHp: 0 },
+      conehead: { id: 'conehead', cost: 2, hp: 640, armorType: 'cone', armorHp: 370 },
+      buckethead: { id: 'buckethead', cost: 4, hp: 1370, armorType: 'bucket', armorHp: 1100 }
     };
 
     let availablePlants = ['peashooter'];
@@ -813,10 +812,13 @@
     let floatingTexts = [];
     let cooldowns = { sunflower: 0, peashooter: 0 };
 
-    let totalWaves = 3;
+    // Sistema de oleadas del juego original (10 oleadas internas por bandera)
+    let totalWaves = 5;
     let currentWave = 0;
-    let flagWaves = [3];
+    let flagWaves = [5];
     let nextWaveTime = INITIAL_GRACE_SECONDS;
+    let currentWaveTotalHp = 0;
+    let waveAccelerated = false;
     let lastRowSpawnTime = [-999, -999, -999, -999, -999];
     let lastSpawnedRow = -1;
 
@@ -834,20 +836,23 @@
       if (dayNum === 1) {
         activeRows = [2];
         availablePlants = ['peashooter'];
-        totalWaves = 3; // Oleada 1 (1 zombi inicial) + Oleadas 2 y 3 (3-5 zombis c/u)
-        flagWaves = [3];
+        totalWaves = 5;
+        flagWaves = [5];
       } else if (dayNum === 2) {
         activeRows = [1, 2, 3];
         availablePlants = ['peashooter', 'sunflower'];
-        totalWaves = 4;
-        flagWaves = [4];
+        totalWaves = 10;
+        flagWaves = [10];
+      } else if (dayNum <= 4) {
+        activeRows = [0, 1, 2, 3, 4];
+        availablePlants = ['peashooter', 'sunflower'];
+        totalWaves = 10;
+        flagWaves = [10];
       } else {
         activeRows = [0, 1, 2, 3, 4];
         availablePlants = ['peashooter', 'sunflower'];
-        totalWaves = Math.min(8, 3 + dayNum);
-        flagWaves = totalWaves >= 6
-          ? [Math.floor(totalWaves / 2), totalWaves]
-          : [totalWaves];
+        totalWaves = 20;
+        flagWaves = [10, 20];
       }
     }
 
@@ -881,12 +886,14 @@
       }));
 
       currentWave = 0;
+      currentWaveTotalHp = 0;
+      waveAccelerated = false;
       killedZombiesInDay = 0;
       levelTimer = 0;
       lastRowSpawnTime = [-999, -999, -999, -999, -999];
       lastSpawnedRow = -1;
 
-      // 30 segundos antes de que aparezca el primer zombi
+      // Siempre 30 segundos antes del primer zombi
       nextWaveTime = INITIAL_GRACE_SECONDS;
       skySunTimer = 10.0;
       ambientGroanTimer = 14.0;
@@ -927,7 +934,7 @@
         targetY,
         vy: 45,
         value: 25,
-        groundLife: 7.0 + Math.random() * 1.0,
+        groundLife: 7.5,
         bob: Math.random() * Math.PI * 2
       });
     }
@@ -941,7 +948,7 @@
         targetY: y + 20,
         vy: 30,
         value: 25,
-        groundLife: 7.0 + Math.random() * 1.0,
+        groundLife: 7.5,
         bob: 0
       });
     }
@@ -954,7 +961,13 @@
         return r;
       }
 
-      const candidates = activeRows.filter(r => r !== lastSpawnedRow);
+      // Evitar repetir la misma fila seguida y evitar filas sin podadora si hay alternativas
+      let candidates = activeRows.filter(r => r !== lastSpawnedRow);
+      const withMower = candidates.filter(r => mowers.some(m => m.row === r && !m.used));
+      if (withMower.length > 0 && Math.random() < 0.75) {
+        candidates = withMower;
+      }
+
       let maxIdle = -1;
       candidates.forEach(r => {
         const idle = levelTimer - lastRowSpawnTime[r];
@@ -968,17 +981,18 @@
       return chosen;
     }
 
-    function spawnZombieEntity(typeId = 'common', isAmbush = false) {
+    function spawnZombieEntity(typeId = 'common', waveNum = 1, isFlag = false) {
       const def = ZOMBIE_TYPES[typeId] || ZOMBIE_TYPES.common;
       const row = pickSmartRow();
-      const baseSpeed = CELL_W / 4.7;
-      const spawnX = isAmbush
-        ? GRID_X + (6.3 + Math.random() * 1.2) * CELL_W
-        : 985;
+      // 4.7s por casilla para zombi normal; el Abanderado camina un poco más rápido (3.8s por casilla)
+      const baseSpeed = isFlag ? (CELL_W / 3.8) : (CELL_W / 4.7);
+      const spawnX = 985;
       const spawnY = GRID_Y + row * CELL_H + CELL_H * 0.56;
 
       zombies.push({
         row,
+        wave: waveNum,
+        isFlag,
         x: spawnX,
         y: spawnY,
         hp: def.hp,
@@ -988,28 +1002,17 @@
         maxArmorHp: def.armorHp,
         hasArm: true,
         hasHead: true,
-        speed: baseSpeed + (Math.random() * 0.8 - 0.4),
+        speed: baseSpeed + (Math.random() * 0.7 - 0.35),
         eatTimer: 0,
         walkPhase: Math.random() * 6
       });
-
-      if (isAmbush) {
-        for (let k = 0; k < 14; k++) {
-          particles.push({
-            x: spawnX + (Math.random() * 24 - 12),
-            y: spawnY + 18,
-            vx: (Math.random() - 0.5) * 120,
-            vy: -40 - Math.random() * 90,
-            color: '#6d4c41',
-            size: 5,
-            life: 0.55
-          });
-        }
-      }
     }
 
     function triggerNextWave() {
       currentWave++;
+      waveAccelerated = false;
+      currentWaveTotalHp = 0;
+
       const isFirstWave = currentWave === 1;
       const isFlagWave = flagWaves.includes(currentWave);
 
@@ -1025,47 +1028,62 @@
         playSound('zombie_spawn');
       }
 
-      // Oleada 1: 1 zombi inicial. Oleadas siguientes: 3-5 zombis con dificultad progresiva
-      let zombiesInWave = 1;
-      if (!isFirstWave) {
-        const waveRatio = (currentWave - 1) / Math.max(1, totalWaves - 1);
-        const baseCount = currentDay === 1
-          ? (isFlagWave ? 4 : 3)
-          : Math.min(5, Math.max(3, Math.round(3 + waveRatio * 2)));
-        zombiesInWave = isFlagWave ? Math.min(5, Math.max(4, baseCount + 1)) : baseCount;
+      // Presupuesto de puntos por oleada (igual al PvZ original)
+      let budget = 1;
+      if (currentDay === 1) {
+        budget = isFlagWave ? 3 : (currentWave >= 4 ? 2 : 1);
+      } else if (currentDay === 2) {
+        budget = isFlagWave ? 5 : Math.max(1, Math.ceil(currentWave * 0.35));
+      } else {
+        const basePoints = Math.max(1, Math.ceil(currentWave * 0.55) + Math.floor((currentDay - 3) * 0.6));
+        budget = isFlagWave ? Math.ceil(basePoints * 2.0) : basePoints;
       }
 
-      // Intervalo entre zombis: 8 a 12 segundos (se acorta progresivamente dentro de ese rango)
-      const progressFactor = Math.min(1, ((currentWave - 1) / Math.max(1, totalWaves - 1)) * 0.7 + (currentDay - 1) * 0.1);
-      const minGap = 8.0;
-      const maxGap = 12.0 - progressFactor * 2.0; // De 12s en oleadas iniciales a 10s en oleadas finales
+      let spawnIndex = 0;
 
-      let accumulatedDelay = 0;
-      for (let i = 0; i < zombiesInWave; i++) {
-        if (i > 0) {
-          accumulatedDelay += minGap + Math.random() * (maxGap - minGap);
-        }
+      // En las oleadas con bandera entra primero el Zombi Abanderado
+      if (isFlagWave) {
+        pendingWaveSpawns.push({
+          time: levelTimer,
+          type: 'common',
+          wave: currentWave,
+          isFlag: true,
+          hp: ZOMBIE_TYPES.common.hp
+        });
+        currentWaveTotalHp += ZOMBIE_TYPES.common.hp;
+        budget = Math.max(0, budget - 1);
+        spawnIndex++;
+      }
 
-        // Dificultad progresiva en el tipo de zombi
+      // Repartir el presupuesto restante en grupo (separados por 0.5 a 2.0 segundos)
+      while (budget > 0) {
         let chosenType = 'common';
-        if (!isFirstWave && currentDay >= 2) {
-          const waveProgress = currentWave / totalWaves;
-          if (currentDay >= 3 && waveProgress >= 0.7 && i === zombiesInWave - 1 && Math.random() < 0.45) {
-            chosenType = 'buckethead';
-          } else if (waveProgress >= 0.5 && i >= 1 && Math.random() < (0.25 + currentDay * 0.08)) {
-            chosenType = 'conehead';
-          }
+        if (currentDay >= 4 && currentWave >= 6 && budget >= 4 && Math.random() < 0.35) {
+          chosenType = 'buckethead';
+        } else if (currentDay >= 2 && currentWave >= 4 && budget >= 2 && Math.random() < 0.45) {
+          chosenType = 'conehead';
         }
+
+        const def = ZOMBIE_TYPES[chosenType];
+        budget -= def.cost;
+        currentWaveTotalHp += def.hp;
+
+        const stagger = spawnIndex === 0
+          ? 0
+          : (0.55 * spawnIndex + Math.random() * 1.1);
 
         pendingWaveSpawns.push({
-          time: levelTimer + accumulatedDelay,
+          time: levelTimer + stagger,
           type: chosenType,
-          isAmbush: false
+          wave: currentWave,
+          isFlag: false,
+          hp: def.hp
         });
+        spawnIndex++;
       }
 
-      // Tiempo entre oleadas: 35 segundos
-      nextWaveTime = levelTimer + WAVE_INTERVAL;
+      // Tiempo base entre oleadas: 25 a 31 segundos
+      nextWaveTime = levelTimer + 25.0 + Math.random() * 6.0;
     }
 
     async function handleVictory() {
@@ -1130,28 +1148,39 @@
         triggerNextWave();
       }
 
-      // Aparición respetando el máximo simultáneo de 5 zombis en pantalla
+      // Desplegar los zombis agrupados de la oleada
       for (let i = pendingWaveSpawns.length - 1; i >= 0; i--) {
         const item = pendingWaveSpawns[i];
         if (levelTimer >= item.time) {
-          if (zombies.length < MAX_SIMULTANEOUS_ZOMBIES) {
-            spawnZombieEntity(item.type, item.isAmbush);
-            pendingWaveSpawns.splice(i, 1);
-          } else {
-            item.time = levelTimer + 1.0;
-          }
+          spawnZombieEntity(item.type, item.wave, item.isFlag);
+          pendingWaveSpawns.splice(i, 1);
         }
       }
 
-      // Si eliminas todos los zombis antes de tiempo, la siguiente oleada se adelanta
+      // Regla del 50% del PvZ original:
+      // Al quitar al menos el 50% de la vida total de la oleada actual, la siguiente oleada se adelanta a 2s
       if (
         currentWave > 0 &&
         currentWave < totalWaves &&
-        zombies.length === 0 &&
-        pendingWaveSpawns.length === 0 &&
-        (nextWaveTime - levelTimer) > 2.5
+        !waveAccelerated &&
+        currentWaveTotalHp > 0
       ) {
-        nextWaveTime = levelTimer + 2.0;
+        let remainingWaveHp = 0;
+        pendingWaveSpawns.forEach(p => {
+          if (p.wave === currentWave) remainingWaveHp += p.hp;
+        });
+        zombies.forEach(z => {
+          if (z.wave === currentWave && z.hasHead) {
+            remainingWaveHp += Math.max(0, z.hp);
+          }
+        });
+
+        if (remainingWaveHp <= currentWaveTotalHp * 0.5) {
+          waveAccelerated = true;
+          if ((nextWaveTime - levelTimer) > 2.0) {
+            nextWaveTime = levelTimer + 2.0;
+          }
+        }
       }
 
       if (zombies.some(z => z.hasHead)) {
@@ -1742,6 +1771,24 @@
         ctx.beginPath();
         ctx.arc(-25, -8.5 + sway, 4.5, 0, Math.PI * 2);
         ctx.fill();
+
+        // Estandarte del Zombi Abanderado
+        if (z.isFlag) {
+          ctx.strokeStyle = '#d7ccc8';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(-25, -4 + sway);
+          ctx.lineTo(-25, -58 + sway);
+          ctx.stroke();
+
+          ctx.fillStyle = '#d50000';
+          ctx.beginPath();
+          ctx.moveTo(-25, -58 + sway);
+          ctx.lineTo(-3, -51 + sway);
+          ctx.lineTo(-25, -43 + sway);
+          ctx.closePath();
+          ctx.fill();
+        }
       } else {
         ctx.fillStyle = '#2c201c';
         ctx.fillRect(-17, -12 + sway, 5, 7);
