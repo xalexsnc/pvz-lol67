@@ -508,7 +508,7 @@
       } catch (e) {}
     })();
 
-    // --- MOTOR DEL JUEGO (VALORES OFICIALES PVZ 1) ---
+    // --- MOTOR DEL JUEGO (ECONOMÍA Y RECARGAS OFICIALES PVZ 1) ---
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
@@ -622,9 +622,9 @@
     let spawnedZombies = 0;
     let killedZombiesInDay = 0;
     let levelTimer = 0;
-    let nextSpawnTime = 20;
-    let spawnInterval = 16;
-    let skySunTimer = 8;
+    let nextSpawnTime = 24;
+    let spawnInterval = 18;
+    let skySunTimer = 8.5;
     let bannerText = '';
     let bannerTimer = 0;
     let globalTime = 0;
@@ -636,24 +636,24 @@
         activeRows = [2];
         availablePlants = ['peashooter'];
         totalZombiesInDay = 5;
-        spawnInterval = 18;
+        spawnInterval = 20;
       } else if (dayNum === 2) {
         activeRows = [1, 2, 3];
         availablePlants = ['peashooter', 'sunflower'];
         totalZombiesInDay = 8;
-        spawnInterval = 16;
+        spawnInterval = 17;
       } else {
         activeRows = [0, 1, 2, 3, 4];
         availablePlants = ['peashooter', 'sunflower'];
         totalZombiesInDay = 8 + dayNum * 2;
-        spawnInterval = Math.max(9, 17 - dayNum);
+        spawnInterval = Math.max(10, 18 - dayNum);
       }
     }
 
     function startDay(dayNum) {
       configureDay(dayNum);
-      // En Día 1 se inicia con 150 soles (aún no existe Girasol); desde Día 2 se inicia con 50 soles exactos
-      sun = dayNum === 1 ? 150 : 50;
+      // Soles iniciales exactos del juego base: 50 soles
+      sun = 50;
       selectedCard = null;
       shovelActive = false;
 
@@ -683,8 +683,9 @@
       spawnedZombies = 0;
       killedZombiesInDay = 0;
       levelTimer = 0;
-      nextSpawnTime = 20;
-      skySunTimer = 5.0; // Primer sol del cielo para ayudar al arranque; luego cada 8 a 10s
+      nextSpawnTime = dayNum === 1 ? 24 : 20;
+      // Soles del cielo: cae uno cada 8 a 10 segundos
+      skySunTimer = 8.0 + Math.random() * 2.0;
 
       lobbyScreen.classList.add('hidden');
       winScreen.classList.add('hidden');
@@ -692,13 +693,13 @@
       state = 'playing';
 
       if (currentDay === 1) {
-        bannerText = 'Día 1 — ¡Planta Lanzaguisantes para defender el jardín!';
+        bannerText = 'Día 1 — ¡Recoge soles del cielo y planta Lanzaguisantes!';
         document.getElementById('lose-tip').textContent =
-          'Recoge los soles que caen del cielo y planta varios Lanzaguisantes en el carril central.';
+          'Empiezas con 50 soles: recoge 2 soles del cielo para llegar a 100 y plantar tu primer Lanzaguisantes.';
       } else {
         bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
         document.getElementById('lose-tip').textContent =
-          'Empiezas con 50 soles: planta Girasoles al fondo para generar economía y defiende con Lanzaguisantes.';
+          'Empiezas con 50 soles: planta un Girasol al fondo para producir más soles y defiende con Lanzaguisantes.';
       }
       bannerTimer = 2.8;
     }
@@ -720,7 +721,8 @@
         targetY,
         vy: 45,
         value: 25,
-        groundLife: 7.5, // Desaparece tras 7 a 8 segundos en el suelo
+        // Desaparece tras 7 a 8 segundos en el suelo
+        groundLife: 7.0 + Math.random() * 1.0,
         bob: Math.random() * Math.PI * 2
       });
     }
@@ -734,7 +736,8 @@
         targetY: y + 20,
         vy: 30,
         value: 25,
-        groundLife: 7.5, // Desaparece tras 7 a 8 segundos en el suelo
+        // Desaparece tras 7 a 8 segundos en el suelo
+        groundLife: 7.0 + Math.random() * 1.0,
         bob: 0
       });
     }
@@ -971,7 +974,7 @@
         }
       });
 
-      // Soles: caen hasta targetY y permanecen 7.5s en pantalla antes de desaparecer
+      // Soles: caen hasta targetY y permanecen 7 a 8 segundos en el suelo antes de desaparecer
       for (let i = suns.length - 1; i >= 0; i--) {
         const s = suns[i];
         s.bob += dt * 3;
@@ -1202,7 +1205,6 @@
       });
 
       suns.forEach(s => {
-        // Parpadeo en los últimos 1.5s antes de desaparecer
         if (s.groundLife < 1.5 && Math.floor(s.groundLife * 10) % 2 === 0) return;
         const pulse = 1 + Math.sin(s.bob) * 0.08;
         drawSunIcon(s.x, s.y, 23 * pulse, globalTime * 1.2);
