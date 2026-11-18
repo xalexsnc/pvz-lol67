@@ -230,11 +230,23 @@
       padding: 14px 24px;
       margin-bottom: 18px;
       color: #fff8e1;
+      max-width: 520px;
     }
     .unlock-banner h3 {
       color: #ffd54f;
       font-size: 20px;
       margin-bottom: 4px;
+    }
+    .pause-panel {
+      background: #3e2723;
+      border: 4px solid #8d6e63;
+      border-radius: 16px;
+      padding: 28px 36px;
+      min-width: 360px;
+      box-shadow: 0 14px 35px rgba(0, 0, 0, 0.75);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
   </style>
 </head>
@@ -318,12 +330,23 @@
       </div>
     </div>
 
-    <!-- Pantalla 3: Victoria -->
+    <!-- Pantalla 3: Pausa -->
+    <div id="pause-screen" class="overlay hidden" style="background: rgba(10, 18, 8, 0.82);">
+      <h1>JUEGO EN PAUSA</h1>
+      <p class="subtitle">Tómate un respiro. Tu jardín está a salvo mientras decides.</p>
+      <div class="pause-panel">
+        <button class="primary-btn" id="resume-btn">REANUDAR PARTIDA</button>
+        <button class="secondary-btn" id="pause-restart-btn">REINICIAR DÍA</button>
+        <button class="secondary-btn" id="pause-lobby-btn">VOLVER AL PERFIL</button>
+      </div>
+    </div>
+
+    <!-- Pantalla 4: Victoria -->
     <div id="win-screen" class="overlay hidden">
       <h1 id="win-title">¡DÍA COMPLETADO!</h1>
       <div id="unlock-box" class="unlock-banner hidden">
-        <h3>¡NUEVA PLANTA DESBLOQUEADA: GIRASOL!</h3>
-        <p>Costo: 50 soles — Produce 25 soles cada 24 segundos.</p>
+        <h3 id="unlock-title">¡NUEVA PLANTA DESBLOQUEADA!</h3>
+        <p id="unlock-desc">Descripción de la planta.</p>
       </div>
       <p class="subtitle" id="win-msg">Progreso guardado en tu cuenta.</p>
       <div style="width: 320px;">
@@ -331,7 +354,7 @@
       </div>
     </div>
 
-    <!-- Pantalla 4: Derrota -->
+    <!-- Pantalla 5: Derrota -->
     <div id="lose-screen" class="overlay hidden">
       <h1 style="color:#ff5252;">¡LOS ZOMBIS SE COMIERON TUS SESOS!</h1>
       <p class="subtitle" id="lose-tip">Recoge los soles del cielo y planta lanzaguisantes para defender el jardín.</p>
@@ -347,6 +370,7 @@
 
     const authScreen = document.getElementById('auth-screen');
     const lobbyScreen = document.getElementById('lobby-screen');
+    const pauseScreen = document.getElementById('pause-screen');
     const winScreen = document.getElementById('win-screen');
     const loseScreen = document.getElementById('lose-screen');
     const authError = document.getElementById('auth-error');
@@ -390,10 +414,17 @@
       } catch (e) {}
     }
 
+    function getUnlockedPlantsLabel(dia) {
+      if (dia >= 3) return 'Lanzaguisantes, Girasol, Nuez';
+      if (dia === 2) return 'Lanzaguisantes, Girasol';
+      return 'Lanzaguisantes';
+    }
+
     function openLobby(user) {
       stopBgMusic();
       currentUser = user;
       authScreen.classList.add('hidden');
+      pauseScreen.classList.add('hidden');
       winScreen.classList.add('hidden');
       loseScreen.classList.add('hidden');
       deleteConfirmBox.classList.add('hidden');
@@ -402,8 +433,7 @@
 
       document.getElementById('welcome-title').textContent = `¡HOLA, ${user.username.toUpperCase()}!`;
       document.getElementById('stat-dia').textContent = `Día ${user.dia_actual}`;
-      document.getElementById('stat-plantas').textContent =
-        user.dia_actual >= 2 ? 'Lanzaguisantes, Girasol' : 'Lanzaguisantes';
+      document.getElementById('stat-plantas').textContent = getUnlockedPlantsLabel(user.dia_actual);
       document.getElementById('stat-zombis').textContent = user.zombis_derrotados;
       document.getElementById('stat-victorias').textContent = user.partidas_ganadas;
       document.getElementById('play-day-btn').textContent = `JUGAR DÍA ${user.dia_actual}`;
@@ -719,7 +749,6 @@
 
     function startBgMusic() {
       stopBgMusic();
-      musicStep = 0;
       if (!musicEnabled) return;
       playMusicTick();
       musicTimerId = setInterval(playMusicTick, 250);
@@ -752,12 +781,11 @@
     const COLS = 9;
     const ROWS = 5;
 
-    // Tiempo de gracia inicial de 30s antes del primer zombi
     const INITIAL_GRACE_SECONDS = 30.0;
 
     const COOLDOWN_TIERS = {
       fast: { duration: 7.5, initial: 0 },
-      slow: { duration: 30.0, initial: 20.0 },
+      slow: { duration: 30.0, initial: 0 },
       very_slow: { duration: 50.0, initial: 35.0 }
     };
 
@@ -770,7 +798,10 @@
         cooldown: COOLDOWN_TIERS.fast.duration,
         initialCooldown: COOLDOWN_TIERS.fast.initial,
         hp: 300,
-        fireRate: 1.45
+        maxHp: 300,
+        fireRate: 1.45,
+        unlockTitle: '¡NUEVA PLANTA DESBLOQUEADA: LANZAGUISANTES!',
+        unlockDesc: 'Costo: 100 soles — Dispara guisantes a los zombis de su carril.'
       },
       sunflower: {
         id: 'sunflower',
@@ -780,11 +811,25 @@
         cooldown: COOLDOWN_TIERS.fast.duration,
         initialCooldown: COOLDOWN_TIERS.fast.initial,
         hp: 300,
-        sunInterval: 24.0
+        maxHp: 300,
+        sunInterval: 24.0,
+        unlockTitle: '¡NUEVA PLANTA DESBLOQUEADA: GIRASOL!',
+        unlockDesc: 'Costo: 50 soles — Produce 25 soles cada 24 segundos.'
+      },
+      wallnut: {
+        id: 'wallnut',
+        name: 'Nuez',
+        cost: 50,
+        tier: 'slow',
+        cooldown: COOLDOWN_TIERS.slow.duration,
+        initialCooldown: COOLDOWN_TIERS.slow.initial,
+        hp: 4000,
+        maxHp: 4000,
+        unlockTitle: '¡NUEVA PLANTA DESBLOQUEADA: NUEZ!',
+        unlockDesc: 'Costo: 50 soles — Escudo de 4,000 puntos de resistencia con recarga lenta de 30 segundos.'
       }
     };
 
-    // Presupuesto interno del juego original: Común = 1 pt, Caracono = 2 pts, Caracubo = 4 pts
     const ZOMBIE_TYPES = {
       common: { id: 'common', cost: 1, hp: 270, armorType: null, armorHp: 0 },
       conehead: { id: 'conehead', cost: 2, hp: 640, armorType: 'cone', armorHp: 370 },
@@ -792,6 +837,7 @@
     };
 
     let availablePlants = ['peashooter'];
+    let rewardPlantForDay = null;
     let state = 'lobby';
     let currentDay = 1;
     let activeRows = [2];
@@ -810,9 +856,12 @@
     let particles = [];
     let fallingParts = [];
     let floatingTexts = [];
-    let cooldowns = { sunflower: 0, peashooter: 0 };
+    let cooldowns = { sunflower: 0, peashooter: 0, wallnut: 0 };
 
-    // Sistema de oleadas del juego original (10 oleadas internas por bandera)
+    // Tarjeta de planta soltada por el último zombi
+    let droppedSeedCard = null;
+    let lastZombieDeathPos = { x: 640, y: 340 };
+
     let totalWaves = 5;
     let currentWave = 0;
     let flagWaves = [5];
@@ -831,26 +880,62 @@
     let globalTime = 0;
     let lastTime = 0;
 
+    function pauseGame() {
+      if (state !== 'playing') return;
+      state = 'paused';
+      stopBgMusic();
+      pauseScreen.classList.remove('hidden');
+    }
+
+    function resumeGame() {
+      if (state !== 'paused') return;
+      pauseScreen.classList.add('hidden');
+      state = 'playing';
+      lastTime = performance.now();
+      startBgMusic();
+    }
+
+    document.getElementById('resume-btn').onclick = resumeGame;
+    document.getElementById('pause-restart-btn').onclick = () => {
+      pauseScreen.classList.add('hidden');
+      startDay(currentDay);
+    };
+    document.getElementById('pause-lobby-btn').onclick = () => {
+      state = 'lobby';
+      openLobby(currentUser);
+    };
+
+    window.addEventListener('keydown', e => {
+      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+        if (state === 'playing') pauseGame();
+        else if (state === 'paused') resumeGame();
+      }
+    });
+
     function configureDay(dayNum) {
       currentDay = dayNum;
       if (dayNum === 1) {
         activeRows = [2];
         availablePlants = ['peashooter'];
+        rewardPlantForDay = 'sunflower';
         totalWaves = 5;
         flagWaves = [5];
       } else if (dayNum === 2) {
         activeRows = [1, 2, 3];
         availablePlants = ['peashooter', 'sunflower'];
-        totalWaves = 10;
-        flagWaves = [10];
+        rewardPlantForDay = 'wallnut';
+        totalWaves = 8;
+        flagWaves = [8];
       } else if (dayNum <= 4) {
         activeRows = [0, 1, 2, 3, 4];
-        availablePlants = ['peashooter', 'sunflower'];
+        availablePlants = ['peashooter', 'sunflower', 'wallnut'];
+        rewardPlantForDay = null;
         totalWaves = 10;
         flagWaves = [10];
       } else {
         activeRows = [0, 1, 2, 3, 4];
-        availablePlants = ['peashooter', 'sunflower'];
+        availablePlants = ['peashooter', 'sunflower', 'wallnut'];
+        rewardPlantForDay = null;
         totalWaves = 20;
         flagWaves = [10, 20];
       }
@@ -861,6 +946,8 @@
       sun = 50;
       selectedCard = null;
       shovelActive = false;
+      droppedSeedCard = null;
+      lastZombieDeathPos = { x: 640, y: 340 };
 
       grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
       zombies = [];
@@ -893,12 +980,13 @@
       lastRowSpawnTime = [-999, -999, -999, -999, -999];
       lastSpawnedRow = -1;
 
-      // Siempre 30 segundos antes del primer zombi
       nextWaveTime = INITIAL_GRACE_SECONDS;
       skySunTimer = 10.0;
       ambientGroanTimer = 14.0;
+      musicStep = 0;
 
       lobbyScreen.classList.add('hidden');
+      pauseScreen.classList.add('hidden');
       winScreen.classList.add('hidden');
       loseScreen.classList.add('hidden');
       state = 'playing';
@@ -909,10 +997,14 @@
         bannerText = 'Día 1 — ¡Recoge soles del cielo y planta Lanzaguisantes!';
         document.getElementById('lose-tip').textContent =
           'Empiezas con 50 soles: cada 10s cae un sol de 25 puntos. Recoge dos para llegar a 100 y plantar tu Lanzaguisantes.';
-      } else {
-        bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
+      } else if (currentDay === 2) {
+        bannerText = 'Día 2 — ¡Usa Girasoles y Lanzaguisantes para defender 3 carriles!';
         document.getElementById('lose-tip').textContent =
-          'Empiezas con 50 soles: planta Girasoles al fondo y defiende cada carril con Lanzaguisantes.';
+          'Planta Girasoles al fondo para generar soles rápido y cubre las 3 filas con Lanzaguisantes.';
+      } else {
+        bannerText = `Día ${currentDay} — ¡Protege tu jardín con Nueces y Lanzaguisantes!`;
+        document.getElementById('lose-tip').textContent =
+          'Coloca Nueces al frente para frenar a los Zombis Caracono mientras los Lanzaguisantes los eliminan.';
       }
       bannerTimer = 2.8;
     }
@@ -961,7 +1053,6 @@
         return r;
       }
 
-      // Evitar repetir la misma fila seguida y evitar filas sin podadora si hay alternativas
       let candidates = activeRows.filter(r => r !== lastSpawnedRow);
       const withMower = candidates.filter(r => mowers.some(m => m.row === r && !m.used));
       if (withMower.length > 0 && Math.random() < 0.75) {
@@ -984,7 +1075,6 @@
     function spawnZombieEntity(typeId = 'common', waveNum = 1, isFlag = false) {
       const def = ZOMBIE_TYPES[typeId] || ZOMBIE_TYPES.common;
       const row = pickSmartRow();
-      // 4.7s por casilla para zombi normal; el Abanderado camina un poco más rápido (3.8s por casilla)
       const baseSpeed = isFlag ? (CELL_W / 3.8) : (CELL_W / 4.7);
       const spawnX = 985;
       const spawnY = GRID_Y + row * CELL_H + CELL_H * 0.56;
@@ -1014,7 +1104,8 @@
       currentWaveTotalHp = 0;
 
       const isFirstWave = currentWave === 1;
-      const isFlagWave = flagWaves.includes(currentWave);
+      const isFinalWave = currentWave === totalWaves;
+      const isFlagWave = isFinalWave || flagWaves.includes(currentWave);
 
       if (isFirstWave) {
         bannerText = '¡Se acerca un zombi!';
@@ -1028,12 +1119,11 @@
         playSound('zombie_spawn');
       }
 
-      // Presupuesto de puntos por oleada (igual al PvZ original)
       let budget = 1;
       if (currentDay === 1) {
         budget = isFlagWave ? 3 : (currentWave >= 4 ? 2 : 1);
       } else if (currentDay === 2) {
-        budget = isFlagWave ? 5 : Math.max(1, Math.ceil(currentWave * 0.35));
+        budget = isFlagWave ? 5 : Math.max(1, Math.ceil(currentWave * 0.45));
       } else {
         const basePoints = Math.max(1, Math.ceil(currentWave * 0.55) + Math.floor((currentDay - 3) * 0.6));
         budget = isFlagWave ? Math.ceil(basePoints * 2.0) : basePoints;
@@ -1041,7 +1131,7 @@
 
       let spawnIndex = 0;
 
-      // En las oleadas con bandera entra primero el Zombi Abanderado
+      // El primer zombi de la oleada final (y de cualquier oleada de bandera) siempre tiene la banderita de decoración
       if (isFlagWave) {
         pendingWaveSpawns.push({
           time: levelTimer,
@@ -1055,12 +1145,12 @@
         spawnIndex++;
       }
 
-      // Repartir el presupuesto restante en grupo (separados por 0.5 a 2.0 segundos)
       while (budget > 0) {
         let chosenType = 'common';
+        // El Zombi Caracono aparece a partir del Día 3 (cuando ya tienes la Nuez)
         if (currentDay >= 4 && currentWave >= 6 && budget >= 4 && Math.random() < 0.35) {
           chosenType = 'buckethead';
-        } else if (currentDay >= 2 && currentWave >= 4 && budget >= 2 && Math.random() < 0.45) {
+        } else if (currentDay >= 3 && currentWave >= 3 && budget >= 2 && Math.random() < 0.45) {
           chosenType = 'conehead';
         }
 
@@ -1082,11 +1172,26 @@
         spawnIndex++;
       }
 
-      // Tiempo base entre oleadas: 25 a 31 segundos
       nextWaveTime = levelTimer + 25.0 + Math.random() * 6.0;
     }
 
-    async function handleVictory() {
+    function spawnDroppedSeedCard(plantId) {
+      const clampedX = Math.max(GRID_X + 40, Math.min(GRID_X + COLS * CELL_W - 60, lastZombieDeathPos.x));
+      const clampedY = Math.max(GRID_Y + 40, Math.min(GRID_Y + ROWS * CELL_H - 60, lastZombieDeathPos.y));
+      droppedSeedCard = {
+        id: plantId,
+        x: clampedX,
+        y: clampedY - 24,
+        vy: -135,
+        targetY: clampedY,
+        timer: 0
+      };
+      bannerText = '¡El último zombi soltó una nueva planta! Haz clic en la tarjeta.';
+      bannerTimer = 5.0;
+      playSound('sun');
+    }
+
+    async function handleVictory(unlockedPlantId = null) {
       state = 'win';
       stopBgMusic();
       playSound('win');
@@ -1096,7 +1201,10 @@
       document.getElementById('win-msg').textContent = 'Guardando progreso en la nube...';
 
       const unlockBox = document.getElementById('unlock-box');
-      if (currentDay === 1) {
+      if (unlockedPlantId && PLANT_DEFS[unlockedPlantId]) {
+        const pDef = PLANT_DEFS[unlockedPlantId];
+        document.getElementById('unlock-title').textContent = pDef.unlockTitle;
+        document.getElementById('unlock-desc').textContent = pDef.unlockDesc;
         unlockBox.classList.remove('hidden');
       } else {
         unlockBox.classList.add('hidden');
@@ -1128,9 +1236,9 @@
     }
 
     function update(dt) {
-      globalTime += dt;
       if (state !== 'playing') return;
 
+      globalTime += dt;
       levelTimer += dt;
       if (bannerTimer > 0) bannerTimer -= dt;
 
@@ -1148,7 +1256,6 @@
         triggerNextWave();
       }
 
-      // Desplegar los zombis agrupados de la oleada
       for (let i = pendingWaveSpawns.length - 1; i >= 0; i--) {
         const item = pendingWaveSpawns[i];
         if (levelTimer >= item.time) {
@@ -1157,8 +1264,7 @@
         }
       }
 
-      // Regla del 50% del PvZ original:
-      // Al quitar al menos el 50% de la vida total de la oleada actual, la siguiente oleada se adelanta a 2s
+      // Regla del 50%: al quitar >=50% de la vida de la oleada activa, adelanta la siguiente oleada
       if (
         currentWave > 0 &&
         currentWave < totalWaves &&
@@ -1296,6 +1402,7 @@
         }
 
         if (z.hp <= 0) {
+          lastZombieDeathPos = { x: z.x, y: z.y };
           killedZombiesInDay++;
           zombies.splice(i, 1);
           continue;
@@ -1335,7 +1442,10 @@
         if (m.active && !m.used) {
           m.x += 470 * dt;
           zombies.forEach(z => {
-            if (z.row === m.row && Math.abs(z.x - m.x) < 42) z.hp = 0;
+            if (z.row === m.row && Math.abs(z.x - m.x) < 42) {
+              lastZombieDeathPos = { x: z.x, y: z.y };
+              z.hp = 0;
+            }
           });
           if (m.x > 1020) m.used = true;
         }
@@ -1384,8 +1494,26 @@
         if (ft.life <= 0) floatingTexts.splice(i, 1);
       }
 
+      if (droppedSeedCard) {
+        droppedSeedCard.timer += dt;
+        if (droppedSeedCard.y < droppedSeedCard.targetY || droppedSeedCard.vy < 0) {
+          droppedSeedCard.vy += 360 * dt;
+          droppedSeedCard.y += droppedSeedCard.vy * dt;
+          if (droppedSeedCard.y >= droppedSeedCard.targetY && droppedSeedCard.vy > 0) {
+            droppedSeedCard.y = droppedSeedCard.targetY;
+            droppedSeedCard.vy = 0;
+          }
+        }
+      }
+
       if (currentWave >= totalWaves && pendingWaveSpawns.length === 0 && zombies.length === 0) {
-        handleVictory();
+        if (rewardPlantForDay) {
+          if (!droppedSeedCard) {
+            spawnDroppedSeedCard(rewardPlantForDay);
+          }
+        } else {
+          handleVictory(null);
+        }
       }
     }
 
@@ -1436,6 +1564,7 @@
         }
       }
 
+      // Barra superior de semillas
       ctx.fillStyle = '#6d4726';
       ctx.fillRect(10, 8, 420, 86);
       ctx.strokeStyle = '#3b2313';
@@ -1468,7 +1597,7 @@
         ctx.save();
         ctx.translate(cx + 34, cy + 36);
         ctx.scale(0.54, 0.54);
-        drawPlantSprite(id, 0, 0, 0, 0);
+        drawPlantSprite(id, 0, 0, 0, 0, 1);
         ctx.restore();
 
         ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -1484,38 +1613,53 @@
         }
       });
 
+      // Botón Pala
       ctx.fillStyle = shovelActive ? '#ffca28' : '#6d4726';
-      ctx.fillRect(442, 12, 74, 76);
+      ctx.fillRect(440, 12, 68, 76);
       ctx.strokeStyle = '#3b2313';
-      ctx.strokeRect(442, 12, 74, 76);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(440, 12, 68, 76);
       ctx.fillStyle = '#fff8e1';
       ctx.font = 'bold 13px sans-serif';
-      ctx.fillText('PALA', 479, 55);
+      ctx.fillText('PALA', 474, 55);
 
+      // Botón Pausa
+      ctx.fillStyle = state === 'paused' ? '#ffca28' : '#5d4037';
+      ctx.fillRect(516, 14, 92, 38);
+      ctx.strokeStyle = '#a1887f';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(516, 14, 92, 38);
+      ctx.fillStyle = state === 'paused' ? '#1b1108' : '#fff8e1';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('PAUSA', 562, 38);
+
+      // Botón Música
       ctx.fillStyle = musicEnabled ? '#2e7d32' : '#4e342e';
-      ctx.fillRect(530, 14, 140, 38);
+      ctx.fillRect(616, 14, 116, 38);
       ctx.strokeStyle = musicEnabled ? '#aeea00' : '#a1887f';
       ctx.lineWidth = 2;
-      ctx.strokeRect(530, 14, 140, 38);
+      ctx.strokeRect(616, 14, 116, 38);
       ctx.fillStyle = '#fff8e1';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillText(musicEnabled ? 'MÚSICA: ON' : 'MÚSICA: OFF', 600, 38);
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(musicEnabled ? 'MÚSICA: ON' : 'MÚSICA: OFF', 674, 38);
 
+      // Etiqueta Jugador
       if (currentUser) {
         ctx.fillStyle = '#3e2723';
-        ctx.fillRect(720, 14, 165, 38);
+        ctx.fillRect(740, 14, 155, 38);
         ctx.fillStyle = '#ffd54f';
-        ctx.font = 'bold 13px sans-serif';
-        ctx.fillText(`Jugador: ${currentUser.username}`, 802, 38);
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText(`Jugador: ${currentUser.username}`, 817, 38);
       }
 
+      // Botón Perfil
       ctx.fillStyle = '#4e342e';
-      ctx.fillRect(895, 14, 85, 38);
+      ctx.fillRect(903, 14, 82, 38);
       ctx.strokeStyle = '#a1887f';
-      ctx.strokeRect(895, 14, 85, 38);
+      ctx.strokeRect(903, 14, 82, 38);
       ctx.fillStyle = '#fff8e1';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillText('PERFIL', 937, 38);
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('PERFIL', 944, 38);
 
       mowers.forEach(m => {
         if (m.used) return;
@@ -1532,12 +1676,14 @@
         for (let c = 0; c < COLS; c++) {
           const p = grid[r][c];
           if (!p) continue;
+          const hpRatio = p.hp / (p.maxHp || 300);
           drawPlantSprite(
             p.id,
             GRID_X + c * CELL_W + CELL_W / 2,
             GRID_Y + r * CELL_H + CELL_H / 2 + 8,
             p.timer,
-            p.recoil || 0
+            p.recoil || 0,
+            hpRatio
           );
         }
       }
@@ -1579,6 +1725,11 @@
         ctx.restore();
       });
 
+      // Dibujar tarjeta de planta soltada por el último zombi
+      if (droppedSeedCard) {
+        drawDroppedSeedCard(droppedSeedCard);
+      }
+
       suns.forEach(s => {
         if (s.groundLife < 1.5 && Math.floor(s.groundLife * 10) % 2 === 0) return;
         const pulse = 1 + Math.sin(s.bob) * 0.08;
@@ -1595,9 +1746,11 @@
       floatingTexts.forEach(ft => {
         ctx.fillStyle = ft.color;
         ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
         ctx.fillText(ft.text, ft.x, ft.y);
       });
 
+      // Barra de progreso de oleadas
       const bx = 760, by = 590, bw = 210, bh = 18;
       ctx.fillStyle = '#1b1108';
       ctx.fillRect(bx, by, bw, bh);
@@ -1636,13 +1789,58 @@
       ctx.fillText(`Día ${currentDay}`, bx - 14, by + 14);
 
       if (bannerTimer > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,0.72)';
-        ctx.fillRect(160, 272, 680, 66);
+        ctx.fillStyle = 'rgba(0,0,0,0.74)';
+        ctx.fillRect(140, 272, 720, 66);
         ctx.fillStyle = '#ff5252';
-        ctx.font = 'bold 24px sans-serif';
+        ctx.font = 'bold 22px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(bannerText, 500, 314);
+        ctx.fillText(bannerText, 500, 313);
       }
+    }
+
+    function drawDroppedSeedCard(card) {
+      const def = PLANT_DEFS[card.id];
+      const bobY = Math.sin(card.timer * 4.5) * 4;
+      const cx = card.x - 38;
+      const cy = card.y - 44 + bobY;
+
+      ctx.save();
+      // Halo luminoso detrás de la tarjeta
+      const glowRadius = 56 + Math.sin(card.timer * 6) * 8;
+      const grad = ctx.createRadialGradient(card.x, card.y + bobY, 8, card.x, card.y + bobY, glowRadius);
+      grad.addColorStop(0, 'rgba(255, 245, 157, 0.95)');
+      grad.addColorStop(0.6, 'rgba(255, 213, 79, 0.45)');
+      grad.addColorStop(1, 'rgba(255, 213, 79, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(card.x, card.y + bobY, glowRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tarjeta de planta
+      ctx.fillStyle = '#fff9c4';
+      ctx.fillRect(cx, cy, 76, 86);
+      ctx.strokeStyle = '#ff8f00';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(cx, cy, 76, 86);
+
+      ctx.save();
+      ctx.translate(cx + 38, cy + 40);
+      ctx.scale(0.62, 0.62);
+      drawPlantSprite(card.id, 0, 0, card.timer, 0, 1);
+      ctx.restore();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(cx + 6, cy + 63, 64, 18);
+      ctx.fillStyle = '#1b1108';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(def.cost, cx + 38, cy + 77);
+
+      // Etiqueta superior flotante
+      ctx.fillStyle = '#ffd54f';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('¡CLIC AQUÍ!', card.x, cy - 10);
+      ctx.restore();
     }
 
     function drawSunIcon(x, y, r, angle = 0) {
@@ -1666,9 +1864,110 @@
       ctx.restore();
     }
 
-    function drawPlantSprite(id, x, y, timer, recoil) {
+    function drawPlantSprite(id, x, y, timer, recoil, hpRatio = 1) {
       ctx.save();
       ctx.translate(x, y);
+
+      if (id === 'wallnut') {
+        const wobble = Math.sin(timer * 2.2) * 0.04;
+        ctx.rotate(wobble);
+
+        // Sombra en el césped
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath();
+        ctx.ellipse(0, 26, 20, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cuerpo de la Nuez
+        ctx.fillStyle = '#c68642';
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 21, 26, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#6d4020';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // Textura interna de cáscara
+        ctx.strokeStyle = '#a1662f';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 4, 15, 0.3, Math.PI - 0.3);
+        ctx.stroke();
+
+        // Grietas según el porcentaje de vida (< 66% y < 33%)
+        if (hpRatio <= 0.66) {
+          ctx.strokeStyle = '#4e2a10';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-10, -21);
+          ctx.lineTo(-5, -12);
+          ctx.lineTo(-11, -5);
+          ctx.stroke();
+        }
+        if (hpRatio <= 0.33) {
+          ctx.strokeStyle = '#3e1f08';
+          ctx.lineWidth = 2.3;
+          ctx.beginPath();
+          ctx.moveTo(11, -18);
+          ctx.lineTo(6, -8);
+          ctx.lineTo(13, 0);
+          ctx.lineTo(7, 9);
+          ctx.moveTo(-14, 6);
+          ctx.lineTo(-7, 13);
+          ctx.lineTo(-12, 20);
+          ctx.stroke();
+        }
+
+        // Ojos de la Nuez
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(-7, -4, 5.5, 0, Math.PI * 2);
+        ctx.arc(7, -4, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#3e2723';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(-6, -4, 2.5, 0, Math.PI * 2);
+        ctx.arc(8, -4, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Expresión según daño
+        if (hpRatio > 0.66) {
+          // Intacta: sonrisa tranquila
+          ctx.strokeStyle = '#3e2723';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 5, 7, 0.2, Math.PI - 0.2);
+          ctx.stroke();
+        } else if (hpRatio > 0.33) {
+          // Bajo 66%: gesto tenso / preocupado
+          ctx.strokeStyle = '#3e2723';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-6, 9);
+          ctx.lineTo(6, 7);
+          ctx.stroke();
+        } else {
+          // Bajo 33%: llorando y muy agrietada
+          ctx.fillStyle = '#4fc3f7';
+          ctx.beginPath();
+          ctx.arc(-9, 3, 2.5, 0, Math.PI * 2);
+          ctx.arc(9, 4, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#3e2723';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 14, 6, Math.PI + 0.2, Math.PI * 2 - 0.2);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+        return;
+      }
 
       ctx.fillStyle = '#2e7d32';
       ctx.beginPath();
@@ -1772,21 +2071,27 @@
         ctx.arc(-25, -8.5 + sway, 4.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Estandarte del Zombi Abanderado
+        // Banderita decorativa del primer zombi de la oleada final / gran oleada
         if (z.isFlag) {
           ctx.strokeStyle = '#d7ccc8';
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = 2.8;
           ctx.beginPath();
           ctx.moveTo(-25, -4 + sway);
-          ctx.lineTo(-25, -58 + sway);
+          ctx.lineTo(-25, -62 + sway);
           ctx.stroke();
 
           ctx.fillStyle = '#d50000';
           ctx.beginPath();
-          ctx.moveTo(-25, -58 + sway);
-          ctx.lineTo(-3, -51 + sway);
-          ctx.lineTo(-25, -43 + sway);
+          ctx.moveTo(-25, -62 + sway);
+          ctx.lineTo(-1, -54 + sway);
+          ctx.lineTo(-25, -45 + sway);
           ctx.closePath();
+          ctx.fill();
+
+          // Detalle decorativo amarillo en la banderita
+          ctx.fillStyle = '#ffd54f';
+          ctx.beginPath();
+          ctx.arc(-16, -54 + sway, 3.2, 0, Math.PI * 2);
           ctx.fill();
         }
       } else {
@@ -1854,17 +2159,37 @@
       const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
       const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
 
-      if (mx >= 530 && mx <= 670 && my >= 14 && my <= 52) {
+      // Recoger la tarjeta de planta soltada por el último zombi
+      if (droppedSeedCard) {
+        if (Math.hypot(mx - droppedSeedCard.x, my - droppedSeedCard.y) < 55) {
+          const unlockedId = droppedSeedCard.id;
+          droppedSeedCard = null;
+          rewardPlantForDay = null;
+          handleVictory(unlockedId);
+          return;
+        }
+      }
+
+      // Botón Pausa
+      if (mx >= 516 && mx <= 608 && my >= 14 && my <= 52) {
+        pauseGame();
+        return;
+      }
+
+      // Botón Música
+      if (mx >= 616 && mx <= 732 && my >= 14 && my <= 52) {
         toggleMusic();
         return;
       }
 
-      if (mx >= 895 && mx <= 980 && my >= 14 && my <= 52) {
+      // Botón Perfil
+      if (mx >= 903 && mx <= 985 && my >= 14 && my <= 52) {
         state = 'lobby';
         openLobby(currentUser);
         return;
       }
 
+      // Recoger soles
       for (let i = suns.length - 1; i >= 0; i--) {
         const s = suns[i];
         if (Math.hypot(mx - s.x, my - s.y) < 35) {
@@ -1877,6 +2202,7 @@
         }
       }
 
+      // Seleccionar tarjeta de planta
       availablePlants.forEach((id, i) => {
         const cx = 112 + i * 78;
         const cy = 13;
@@ -1889,12 +2215,14 @@
         }
       });
 
-      if (mx >= 442 && mx <= 516 && my >= 12 && my <= 88) {
+      // Seleccionar Pala
+      if (mx >= 440 && mx <= 508 && my >= 12 && my <= 88) {
         shovelActive = !shovelActive;
         selectedCard = null;
         return;
       }
 
+      // Plantar o quitar planta en el césped
       const col = Math.floor((mx - GRID_X) / CELL_W);
       const row = Math.floor((my - GRID_Y) / CELL_H);
       if (col >= 0 && col < COLS && row >= 0 && row < ROWS && activeRows.includes(row)) {
@@ -1916,6 +2244,7 @@
             grid[row][col] = {
               id: def.id,
               hp: def.hp,
+              maxHp: def.maxHp,
               timer: 0,
               recoil: 0,
               nextAction: initialDelay
