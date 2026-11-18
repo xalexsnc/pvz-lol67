@@ -672,4 +672,1243 @@
       130.81, 0, 196.00, 0, 110.00, 0, 164.81, 0,
       174.61, 0, 130.81, 0, 196.00, 0, 130.81, 196.00,
       130.81, 0, 196.00, 0, 110.00, 0, 164.81, 0,
-      174.61, 0, 130.81, 0, 196.00, 1
+      174.61, 0, 130.81, 0, 196.00, 146.83, 130.81, 0
+    ];
+
+    function playMusicTick() {
+      if (!musicEnabled || state !== 'playing') return;
+      try {
+        ensureAudio();
+        if (audioCtx.state !== 'running') return;
+        const now = audioCtx.currentTime;
+        const idx = musicStep % MELODY_SEQ.length;
+        const melFreq = MELODY_SEQ[idx];
+        const bassFreq = BASS_SEQ[idx];
+
+        if (melFreq > 0) {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(melFreq, now);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.055, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        }
+
+        if (bassFreq > 0) {
+          const bOsc = audioCtx.createOscillator();
+          const bGain = audioCtx.createGain();
+          bOsc.type = 'triangle';
+          bOsc.frequency.setValueAtTime(bassFreq, now);
+          bGain.gain.setValueAtTime(0.001, now);
+          bGain.gain.linearRampToValueAtTime(0.048, now + 0.02);
+          bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+          bOsc.connect(bGain);
+          bGain.connect(audioCtx.destination);
+          bOsc.start(now);
+          bOsc.stop(now + 0.27);
+        }
+
+        musicStep++;
+      } catch (e) {}
+    }
+
+    function startBgMusic() {
+      stopBgMusic();
+      musicStep = 0;
+      if (!musicEnabled) return;
+      playMusicTick();
+      musicTimerId = setInterval(playMusicTick, 250);
+    }
+
+    function stopBgMusic() {
+      if (musicTimerId) {
+        clearInterval(musicTimerId);
+        musicTimerId = null;
+      }
+    }
+
+    function toggleMusic() {
+      musicEnabled = !musicEnabled;
+      if (musicEnabled && state === 'playing') {
+        startBgMusic();
+      } else {
+        stopBgMusic();
+      }
+    }
+
+    // --- MOTOR DEL JUEGO ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const GRID_X = 230;
+    const GRID_Y = 105;
+    const CELL_W = 80;
+    const CELL_H = 96;
+    const COLS = 9;
+    const ROWS = 5;
+
+    const COOLDOWN_TIERS = {
+      fast: { duration: 7.5, initial: 0 },
+      slow: { duration: 30.0, initial: 20.0 },
+      very_slow: { duration: 50.0, initial: 35.0 }
+    };
+
+    const PLANT_DEFS = {
+      peashooter: {
+        id: 'peashooter',
+        name: 'Lanzaguisantes',
+        cost: 100,
+        tier: 'fast',
+        cooldown: COOLDOWN_TIERS.fast.duration,
+        initialCooldown: COOLDOWN_TIERS.fast.initial,
+        hp: 300,
+        fireRate: 1.45
+      },
+      sunflower: {
+        id: 'sunflower',
+        name: 'Girasol',
+        cost: 50,
+        tier: 'fast',
+        cooldown: COOLDOWN_TIERS.fast.duration,
+        initialCooldown: COOLDOWN_TIERS.fast.initial,
+        hp: 300,
+        sunInterval: 24.0
+      }
+    };
+
+    // Presupuesto interno por tipo de zombi (Común = 1 pt, Caracono = 2 pts, Caracubo = 4 pts)
+    const ZOMBIE_TYPES = {
+      common: { id: 'common', cost: 1, hp: 270, armorType: null, armorHp: 0 },
+      conehead: { id: 'conehead', cost: 2, hp: 640, armorType: 'cone', armorHp: 370 },
+      buckethead: { id: 'buckethead', cost: 4, hp: 1370, armorType: 'bucket', armorHp: 1100 }
+    };
+
+    let availablePlants = ['peashooter'];
+    let state = 'lobby';
+    let currentDay = 1;
+    let activeRows = [2];
+    let sun = 50;
+    let selectedCard = null;
+    let shovelActive = false;
+    let hoverCell = null;
+
+    let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    let zombies = [];
+    let pendingWaveSpawns = [];
+    let peas = [];
+    let suns = [];
+    let flyingSuns = [];
+    let mowers = [];
+    let particles = [];
+    let fallingParts = [];
+    let floatingTexts = [];
+    let cooldowns = { sunflower: 0, peashooter: 0 };
+
+    // Control de oleadas y carriles
+    let totalWaves = 5;
+    let currentWave = 0;
+    let flagWaves = [5];
+    let nextWaveTime = 18;
+    let firstSunflowerPlanted = false;
+    let lastRowSpawnTime = [-999, -999, -999, -999, -999];
+    let lastSpawnedRow = -1;
+
+    let killedZombiesInDay = 0;
+    let levelTimer = 0;
+    let skySunTimer = 10.0;
+    let ambientGroanTimer = 15.0;
+    let bannerText = '';
+    let bannerTimer = 0;
+    let globalTime = 0;
+    let lastTime = 0;
+
+    function configureDay(dayNum) {
+      currentDay = dayNum;
+      if (dayNum === 1) {
+        activeRows = [2];
+        availablePlants = ['peashooter'];
+        totalWaves = 4;
+        flagWaves = [4];
+      } else if (dayNum === 2) {
+        activeRows = [1, 2, 3];
+        availablePlants = ['peashooter', 'sunflower'];
+        totalWaves = 6;
+        flagWaves = [6];
+      } else {
+        activeRows = [0, 1, 2, 3, 4];
+        availablePlants = ['peashooter', 'sunflower'];
+        totalWaves = Math.min(12, 6 + dayNum);
+        flagWaves = totalWaves >= 10
+          ? [Math.floor(totalWaves / 2), totalWaves]
+          : [totalWaves];
+      }
+    }
+
+    function startDay(dayNum) {
+      configureDay(dayNum);
+      sun = 50;
+      selectedCard = null;
+      shovelActive = false;
+
+      grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+      zombies = [];
+      pendingWaveSpawns = [];
+      peas = [];
+      suns = [];
+      flyingSuns = [];
+      particles = [];
+      fallingParts = [];
+      floatingTexts = [];
+
+      cooldowns = {};
+      availablePlants.forEach(id => {
+        cooldowns[id] = PLANT_DEFS[id].initialCooldown;
+      });
+
+      mowers = activeRows.map(r => ({
+        row: r,
+        x: GRID_X - 46,
+        y: GRID_Y + r * CELL_H + CELL_H * 0.56,
+        active: false,
+        used: false
+      }));
+
+      currentWave = 0;
+      killedZombiesInDay = 0;
+      levelTimer = 0;
+      firstSunflowerPlanted = false;
+      lastRowSpawnTime = [-999, -999, -999, -999, -999];
+      lastSpawnedRow = -1;
+
+      // Inicio de la partida: el primer zombi aparece entre 15 y 20 segundos
+      nextWaveTime = 15.0 + Math.random() * 5.0;
+      skySunTimer = 10.0;
+      ambientGroanTimer = 14.0;
+
+      lobbyScreen.classList.add('hidden');
+      winScreen.classList.add('hidden');
+      loseScreen.classList.add('hidden');
+      state = 'playing';
+
+      startBgMusic();
+
+      if (currentDay === 1) {
+        bannerText = 'Día 1 — ¡Recoge soles del cielo y planta Lanzaguisantes!';
+        document.getElementById('lose-tip').textContent =
+          'Empiezas con 50 soles: cada 10s cae un sol de 25 puntos. Recoge dos para llegar a 100 y plantar tu Lanzaguisantes.';
+      } else {
+        bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
+        document.getElementById('lose-tip').textContent =
+          'Empiezas con 50 soles: planta Girasoles al fondo y defiende cada carril con Lanzaguisantes.';
+      }
+      bannerTimer = 2.8;
+    }
+
+    document.getElementById('play-day-btn').onclick = () => {
+      startDay(currentUser ? currentUser.dia_actual : 1);
+    };
+    document.getElementById('retry-btn').onclick = () => startDay(currentDay);
+    document.getElementById('next-day-btn').onclick = () => {
+      startDay(currentUser ? currentUser.dia_actual : currentDay + 1);
+    };
+
+    function spawnSkySun() {
+      const targetX = GRID_X + 60 + Math.random() * (COLS * CELL_W - 120);
+      const targetY = GRID_Y + 60 + Math.random() * (ROWS * CELL_H - 100);
+      suns.push({
+        x: targetX,
+        y: 85,
+        targetY,
+        vy: 45,
+        value: 25,
+        groundLife: 7.0 + Math.random() * 1.0,
+        bob: Math.random() * Math.PI * 2
+      });
+    }
+
+    function spawnPlantSun(col, row) {
+      const x = GRID_X + col * CELL_W + CELL_W * 0.5;
+      const y = GRID_Y + row * CELL_H + CELL_H * 0.4;
+      suns.push({
+        x: x + (Math.random() * 24 - 12),
+        y: y - 10,
+        targetY: y + 20,
+        vy: 30,
+        value: 25,
+        groundLife: 7.0 + Math.random() * 1.0,
+        bob: 0
+      });
+    }
+
+    // Selección inteligente de carril: evita repetir el mismo carril seguido y prioriza filas sin zombis recientes
+    function pickSmartRow() {
+      if (activeRows.length === 1) {
+        const r = activeRows[0];
+        lastSpawnedRow = r;
+        lastRowSpawnTime[r] = levelTimer;
+        return r;
+      }
+
+      const candidates = activeRows.filter(r => r !== lastSpawnedRow);
+      let maxIdle = -1;
+      candidates.forEach(r => {
+        const idle = levelTimer - lastRowSpawnTime[r];
+        if (idle > maxIdle) maxIdle = idle;
+      });
+
+      const bestRows = candidates.filter(r => (levelTimer - lastRowSpawnTime[r]) >= maxIdle - 4);
+      const chosen = bestRows[Math.floor(Math.random() * bestRows.length)];
+      lastSpawnedRow = chosen;
+      lastRowSpawnTime[chosen] = levelTimer;
+      return chosen;
+    }
+
+    function spawnZombieEntity(typeId = 'common', isAmbush = false) {
+      const def = ZOMBIE_TYPES[typeId] || ZOMBIE_TYPES.common;
+      const row = pickSmartRow();
+      const baseSpeed = CELL_W / 4.7;
+      // Si es zombi de emboscada en bandera final, aparece saltándose las primeras casillas de la derecha
+      const spawnX = isAmbush
+        ? GRID_X + (6.3 + Math.random() * 1.2) * CELL_W
+        : 985;
+      const spawnY = GRID_Y + row * CELL_H + CELL_H * 0.56;
+
+      zombies.push({
+        row,
+        x: spawnX,
+        y: spawnY,
+        hp: def.hp,
+        maxHp: def.hp,
+        armorType: def.armorType,
+        armorHp: def.armorHp,
+        maxArmorHp: def.armorHp,
+        hasArm: true,
+        hasHead: true,
+        speed: baseSpeed + (Math.random() * 0.8 - 0.4),
+        eatTimer: 0,
+        walkPhase: Math.random() * 6
+      });
+
+      if (isAmbush) {
+        for (let k = 0; k < 14; k++) {
+          particles.push({
+            x: spawnX + (Math.random() * 24 - 12),
+            y: spawnY + 18,
+            vx: (Math.random() - 0.5) * 120,
+            vy: -40 - Math.random() * 90,
+            color: '#6d4c41',
+            size: 5,
+            life: 0.55
+          });
+        }
+      }
+    }
+
+    // Genera una oleada usando presupuesto de puntos
+    function triggerNextWave() {
+      currentWave++;
+      const isFirstWave = currentWave === 1;
+      const isFlagWave = flagWaves.includes(currentWave);
+
+      if (isFirstWave) {
+        bannerText = '¡Se acerca un zombi!';
+        bannerTimer = 2.2;
+        playSound('zombie_first');
+      } else if (isFlagWave) {
+        bannerText = '¡SE APROXIMA UNA GRAN OLEADA DE ZOMBIS!';
+        bannerTimer = 3.0;
+        playSound('zombie_first');
+      } else {
+        playSound('zombie_spawn');
+      }
+
+      // Cálculo de presupuesto de puntos para esta oleada
+      let budget = 1;
+      if (currentDay === 1) {
+        budget = isFlagWave ? 2 : 1;
+      } else if (currentDay === 2) {
+        budget = isFlagWave ? 3 : (currentWave >= 4 ? 2 : 1);
+      } else {
+        const waveScale = Math.ceil(currentWave * 0.75);
+        const dayBonus = Math.floor((currentDay - 2) * 0.5);
+        budget = waveScale + dayBonus;
+        if (isFlagWave) budget = Math.ceil(budget * 1.75);
+      }
+
+      // Gastar el presupuesto en zombis según su costo interno (1, 2 o 4 puntos)
+      let spawnIndex = 0;
+      while (budget > 0) {
+        let chosenType = 'common';
+        if (currentDay >= 3 && currentWave >= Math.ceil(totalWaves * 0.5) && budget >= 4 && Math.random() < 0.35) {
+          chosenType = 'buckethead';
+        } else if (currentDay >= 3 && currentWave >= 3 && budget >= 2 && Math.random() < 0.45) {
+          chosenType = 'conehead';
+        }
+
+        const cost = ZOMBIE_TYPES[chosenType].cost;
+        budget -= cost;
+
+        const stagger = spawnIndex === 0 ? 0 : (0.55 * spawnIndex + Math.random() * 0.45);
+        pendingWaveSpawns.push({
+          time: levelTimer + stagger,
+          type: chosenType,
+          isAmbush: false
+        });
+        spawnIndex++;
+      }
+
+      // Zombi de emboscada en las oleadas con bandera cuando están activos los 5 carriles
+      if (isFlagWave && currentDay >= 3) {
+        pendingWaveSpawns.push({
+          time: levelTimer + 1.4,
+          type: 'common',
+          isAmbush: true
+        });
+      }
+
+      // Tiempo entre oleadas: 25 a 31 segundos
+      nextWaveTime = levelTimer + 25.0 + Math.random() * 6.0;
+    }
+
+    async function handleVictory() {
+      state = 'win';
+      stopBgMusic();
+      playSound('win');
+
+      const nextDay = currentDay + 1;
+      document.getElementById('win-title').textContent = `¡DÍA ${currentDay} COMPLETADO!`;
+      document.getElementById('win-msg').textContent = 'Guardando progreso en la nube...';
+
+      const unlockBox = document.getElementById('unlock-box');
+      if (currentDay === 1) {
+        unlockBox.classList.remove('hidden');
+      } else {
+        unlockBox.classList.add('hidden');
+      }
+
+      winScreen.classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/save_progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dia_actual: nextDay,
+            zombis_derrotados: killedZombiesInDay,
+            gano_nivel: true
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          currentUser = data.user;
+          document.getElementById('win-msg').textContent =
+            `¡Progreso guardado para ${currentUser.username}! Desbloqueado: Día ${currentUser.dia_actual}.`;
+        } else {
+          document.getElementById('win-msg').textContent = data.error || 'No se pudo guardar el progreso.';
+        }
+      } catch (e) {
+        document.getElementById('win-msg').textContent = 'Error de conexión al guardar progreso.';
+      }
+    }
+
+    function update(dt) {
+      globalTime += dt;
+      if (state !== 'playing') return;
+
+      levelTimer += dt;
+      if (bannerTimer > 0) bannerTimer -= dt;
+
+      for (const id in cooldowns) {
+        if (cooldowns[id] > 0) cooldowns[id] = Math.max(0, cooldowns[id] - dt);
+      }
+
+      skySunTimer -= dt;
+      if (skySunTimer <= 0) {
+        spawnSkySun();
+        skySunTimer = 10.0;
+      }
+
+      // Disparo de nueva oleada por tiempo
+      if (currentWave < totalWaves && levelTimer >= nextWaveTime) {
+        triggerNextWave();
+      }
+
+      // Procesar zombis escalonados de la oleada activa
+      for (let i = pendingWaveSpawns.length - 1; i >= 0; i--) {
+        const item = pendingWaveSpawns[i];
+        if (levelTimer >= item.time) {
+          spawnZombieEntity(item.type, item.isAmbush);
+          pendingWaveSpawns.splice(i, 1);
+        }
+      }
+
+      // Si eliminas a todos los zombis de la pantalla antes de tiempo, la siguiente oleada se adelanta
+      if (
+        currentWave > 0 &&
+        currentWave < totalWaves &&
+        zombies.length === 0 &&
+        pendingWaveSpawns.length === 0 &&
+        (nextWaveTime - levelTimer) > 2.2
+      ) {
+        nextWaveTime = levelTimer + 1.8;
+      }
+
+      if (zombies.some(z => z.hasHead)) {
+        ambientGroanTimer -= dt;
+        if (ambientGroanTimer <= 0) {
+          playSound('zombie_spawn');
+          ambientGroanTimer = 13.0 + Math.random() * 6.0;
+        }
+      }
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const p = grid[r][c];
+          if (!p) continue;
+          p.timer += dt;
+          if (p.recoil > 0) p.recoil = Math.max(0, p.recoil - dt * 4);
+
+          if (p.id === 'sunflower') {
+            if (p.timer >= p.nextAction) {
+              spawnPlantSun(c, r);
+              p.nextAction = p.timer + PLANT_DEFS.sunflower.sunInterval;
+            }
+          } else if (p.id === 'peashooter') {
+            const hasTarget = zombies.some(
+              z => z.row === r && z.hasHead && z.x > GRID_X + c * CELL_W && z.x < 985
+            );
+            if (hasTarget && p.timer >= p.nextAction) {
+              peas.push({
+                x: GRID_X + c * CELL_W + 60,
+                y: GRID_Y + r * CELL_H + 34,
+                row: r,
+                dmg: 20,
+                ya_impacto: false
+              });
+              p.recoil = 1;
+              playSound('shoot');
+              p.nextAction = p.timer + PLANT_DEFS.peashooter.fireRate;
+            }
+          }
+        }
+      }
+
+      for (let i = peas.length - 1; i >= 0; i--) {
+        const pea = peas[i];
+        if (pea.ya_impacto) {
+          peas.splice(i, 1);
+          continue;
+        }
+
+        pea.x += 340 * dt;
+
+        for (const z of zombies) {
+          if (!pea.ya_impacto && z.row === pea.row && z.hp > 0 && Math.abs(z.x - pea.x) < 22) {
+            pea.ya_impacto = true;
+            playSound('hit');
+
+            if (z.armorHp > 0) {
+              z.armorHp = Math.max(0, z.armorHp - pea.dmg);
+              if (z.armorHp === 0) z.armorType = null;
+            }
+            z.hp -= pea.dmg;
+
+            if (z.hasArm && z.hp <= 180) {
+              z.hasArm = false;
+              fallingParts.push({
+                type: 'arm',
+                x: z.x - 6,
+                y: z.y - 12,
+                vx: 18,
+                vy: -65,
+                rot: 0,
+                vrot: 4.5,
+                life: 0.9
+              });
+            }
+
+            if (z.hasHead && z.hp <= 70) {
+              z.hasHead = false;
+              fallingParts.push({
+                type: 'head',
+                x: z.x,
+                y: z.y - 33,
+                vx: 38,
+                vy: -120,
+                rot: 0,
+                vrot: 6.5,
+                life: 1.1
+              });
+            }
+
+            for (let k = 0; k < 5; k++) {
+              particles.push({
+                x: pea.x,
+                y: pea.y,
+                vx: (Math.random() - 0.5) * 90,
+                vy: (Math.random() - 0.5) * 90,
+                color: '#aeea00',
+                size: 4,
+                life: 0.25
+              });
+            }
+            break;
+          }
+        }
+        if (pea.ya_impacto || pea.x > 1010) peas.splice(i, 1);
+      }
+
+      for (let i = zombies.length - 1; i >= 0; i--) {
+        const z = zombies[i];
+
+        if (!z.hasHead) {
+          z.hp -= 46 * dt;
+        }
+
+        if (z.hp <= 0) {
+          killedZombiesInDay++;
+          zombies.splice(i, 1);
+          continue;
+        }
+
+        const col = Math.floor((z.x - GRID_X - 15) / CELL_W);
+        const plant = col >= 0 && col < COLS ? grid[z.row][col] : null;
+
+        if (plant && z.hasHead) {
+          z.eatTimer += dt;
+          if (z.eatTimer >= 0.5) {
+            z.eatTimer = 0;
+            plant.hp -= 50;
+            if (plant.hp <= 0) grid[z.row][col] = null;
+          }
+        } else {
+          const moveSpeed = z.hasHead ? z.speed : z.speed * 0.65;
+          z.x -= moveSpeed * dt;
+          z.walkPhase += dt * 4.5;
+        }
+
+        if (z.x < GRID_X - 10) {
+          const mower = mowers.find(m => m.row === z.row && !m.used);
+          if (mower) {
+            mower.active = true;
+          } else if (z.x < GRID_X - 65) {
+            state = 'lose';
+            stopBgMusic();
+            playSound('lose');
+            loseScreen.classList.remove('hidden');
+            return;
+          }
+        }
+      }
+
+      mowers.forEach(m => {
+        if (m.active && !m.used) {
+          m.x += 470 * dt;
+          zombies.forEach(z => {
+            if (z.row === m.row && Math.abs(z.x - m.x) < 42) z.hp = 0;
+          });
+          if (m.x > 1020) m.used = true;
+        }
+      });
+
+      for (let i = suns.length - 1; i >= 0; i--) {
+        const s = suns[i];
+        s.bob += dt * 3;
+        if (s.y < s.targetY) {
+          s.y += s.vy * dt;
+        } else {
+          s.groundLife -= dt;
+        }
+        if (s.groundLife <= 0) suns.splice(i, 1);
+      }
+
+      for (let i = flyingSuns.length - 1; i >= 0; i--) {
+        const fs = flyingSuns[i];
+        fs.x += (59 - fs.x) * Math.min(1, dt * 10);
+        fs.y += (42 - fs.y) * Math.min(1, dt * 10);
+        if (Math.hypot(59 - fs.x, 42 - fs.y) < 14) flyingSuns.splice(i, 1);
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const pt = particles[i];
+        pt.x += pt.vx * dt;
+        pt.y += pt.vy * dt;
+        pt.life -= dt;
+        if (pt.life <= 0) particles.splice(i, 1);
+      }
+
+      for (let i = fallingParts.length - 1; i >= 0; i--) {
+        const fp = fallingParts[i];
+        fp.vy += 380 * dt;
+        fp.x += fp.vx * dt;
+        fp.y += fp.vy * dt;
+        fp.rot += fp.vrot * dt;
+        fp.life -= dt;
+        if (fp.life <= 0) fallingParts.splice(i, 1);
+      }
+
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.y -= 35 * dt;
+        ft.life -= dt;
+        if (ft.life <= 0) floatingTexts.splice(i, 1);
+      }
+
+      if (currentWave >= totalWaves && pendingWaveSpawns.length === 0 && zombies.length === 0) {
+        handleVictory();
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#4e342e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#5d8aa8';
+      ctx.fillRect(0, 0, canvas.width, 98);
+
+      ctx.fillStyle = '#e8dcc5';
+      ctx.fillRect(0, 98, 175, 522);
+      ctx.fillStyle = '#8d3b2b';
+      ctx.fillRect(0, 98, 182, 36);
+      ctx.fillStyle = '#6d4c41';
+      ctx.fillRect(30, 275, 76, 155);
+      ctx.fillStyle = '#bdbdbd';
+      ctx.fillRect(150, 98, 28, 522);
+
+      for (let r = 0; r < ROWS; r++) {
+        const isActive = activeRows.includes(r);
+        for (let c = 0; c < COLS; c++) {
+          const x = GRID_X + c * CELL_W;
+          const y = GRID_Y + r * CELL_H;
+          if (isActive) {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#68b832' : '#5aa328';
+          } else {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#7c583a' : '#6e4c30';
+          }
+          ctx.fillRect(x, y, CELL_W, CELL_H);
+        }
+      }
+
+      if (hoverCell && state === 'playing') {
+        const { col, row } = hoverCell;
+        if (activeRows.includes(row)) {
+          const hx = GRID_X + col * CELL_W;
+          const hy = GRID_Y + row * CELL_H;
+          if (selectedCard && !grid[row][col]) {
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
+            ctx.fillRect(hx, hy, CELL_W, CELL_H);
+          } else if (shovelActive && grid[row][col]) {
+            ctx.fillStyle = 'rgba(255,82,82,0.35)';
+            ctx.fillRect(hx, hy, CELL_W, CELL_H);
+          }
+        }
+      }
+
+      ctx.fillStyle = '#6d4726';
+      ctx.fillRect(10, 8, 420, 86);
+      ctx.strokeStyle = '#3b2313';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(10, 8, 420, 86);
+
+      ctx.fillStyle = '#4a2e16';
+      ctx.fillRect(18, 13, 82, 76);
+      drawSunIcon(59, 41, 19, globalTime * 0.8);
+      ctx.fillStyle = '#f7e8b2';
+      ctx.fillRect(24, 65, 70, 20);
+      ctx.fillStyle = '#1b1108';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(sun, 59, 81);
+
+      availablePlants.forEach((id, i) => {
+        const def = PLANT_DEFS[id];
+        const cx = 112 + i * 78;
+        const cy = 13;
+        const canAfford = sun >= def.cost;
+        const cd = cooldowns[id] || 0;
+
+        ctx.fillStyle = selectedCard === id ? '#fff59d' : canAfford && cd <= 0 ? '#e6dec8' : '#8d8678';
+        ctx.fillRect(cx, cy, 68, 76);
+        ctx.strokeStyle = selectedCard === id ? '#ffca28' : '#3b2313';
+        ctx.lineWidth = selectedCard === id ? 3.5 : 2;
+        ctx.strokeRect(cx, cy, 68, 76);
+
+        ctx.save();
+        ctx.translate(cx + 34, cy + 36);
+        ctx.scale(0.54, 0.54);
+        drawPlantSprite(id, 0, 0, 0, 0);
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillRect(cx + 4, cy + 56, 60, 17);
+        ctx.fillStyle = canAfford ? '#1b1108' : '#b71c1c';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(def.cost, cx + 34, cy + 69);
+
+        if (cd > 0) {
+          const ratio = cd / def.cooldown;
+          ctx.fillStyle = 'rgba(0,0,0,0.58)';
+          ctx.fillRect(cx, cy, 68, 76 * ratio);
+        }
+      });
+
+      ctx.fillStyle = shovelActive ? '#ffca28' : '#6d4726';
+      ctx.fillRect(442, 12, 74, 76);
+      ctx.strokeStyle = '#3b2313';
+      ctx.strokeRect(442, 12, 74, 76);
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('PALA', 479, 55);
+
+      ctx.fillStyle = musicEnabled ? '#2e7d32' : '#4e342e';
+      ctx.fillRect(530, 14, 140, 38);
+      ctx.strokeStyle = musicEnabled ? '#aeea00' : '#a1887f';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(530, 14, 140, 38);
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(musicEnabled ? 'MÚSICA: ON' : 'MÚSICA: OFF', 600, 38);
+
+      if (currentUser) {
+        ctx.fillStyle = '#3e2723';
+        ctx.fillRect(720, 14, 165, 38);
+        ctx.fillStyle = '#ffd54f';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(`Jugador: ${currentUser.username}`, 802, 38);
+      }
+
+      ctx.fillStyle = '#4e342e';
+      ctx.fillRect(895, 14, 85, 38);
+      ctx.strokeStyle = '#a1887f';
+      ctx.strokeRect(895, 14, 85, 38);
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('PERFIL', 937, 38);
+
+      mowers.forEach(m => {
+        if (m.used) return;
+        ctx.fillStyle = '#d32f2f';
+        ctx.fillRect(m.x - 20, m.y - 14, 40, 22);
+        ctx.fillStyle = '#212121';
+        ctx.beginPath();
+        ctx.arc(m.x - 10, m.y + 10, 8, 0, Math.PI * 2);
+        ctx.arc(m.x + 12, m.y + 10, 8, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const p = grid[r][c];
+          if (!p) continue;
+          drawPlantSprite(
+            p.id,
+            GRID_X + c * CELL_W + CELL_W / 2,
+            GRID_Y + r * CELL_H + CELL_H / 2 + 8,
+            p.timer,
+            p.recoil || 0
+          );
+        }
+      }
+
+      peas.forEach(pea => {
+        ctx.fillStyle = '#76ff03';
+        ctx.beginPath();
+        ctx.arc(pea.x, pea.y, 9.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1b5e20';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+
+      zombies.forEach(z => drawZombieSprite(z));
+
+      fallingParts.forEach(fp => {
+        ctx.save();
+        ctx.translate(fp.x, fp.y);
+        ctx.rotate(fp.rot);
+        if (fp.type === 'arm') {
+          ctx.fillStyle = '#4e3c36';
+          ctx.fillRect(-10, -4, 14, 8);
+          ctx.fillStyle = '#8fa876';
+          ctx.beginPath();
+          ctx.arc(-12, 0, 5, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fp.type === 'head') {
+          ctx.fillStyle = '#8fa876';
+          ctx.beginPath();
+          ctx.arc(0, 0, 15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(-6, -2, 4, 0, Math.PI * 2);
+          ctx.arc(3, -1, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      });
+
+      suns.forEach(s => {
+        if (s.groundLife < 1.5 && Math.floor(s.groundLife * 10) % 2 === 0) return;
+        const pulse = 1 + Math.sin(s.bob) * 0.08;
+        drawSunIcon(s.x, s.y, 23 * pulse, globalTime * 1.2);
+      });
+      flyingSuns.forEach(fs => drawSunIcon(fs.x, fs.y, 20, globalTime * 3));
+
+      particles.forEach(pt => {
+        ctx.fillStyle = pt.color;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      floatingTexts.forEach(ft => {
+        ctx.fillStyle = ft.color;
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(ft.text, ft.x, ft.y);
+      });
+
+      // Barra de progreso de oleadas con banderas
+      const bx = 760, by = 590, bw = 210, bh = 18;
+      ctx.fillStyle = '#1b1108';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = '#6d4c41';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx, by, bw, bh);
+
+      const progress = Math.min(1, currentWave / Math.max(1, totalWaves));
+      ctx.fillStyle = '#76ff03';
+      ctx.fillRect(bx + bw * (1 - progress), by, bw * progress, bh);
+
+      // Dibujar banderas de oleadas gigantes
+      flagWaves.forEach(fw => {
+        const ratio = fw / Math.max(1, totalWaves);
+        const fx = bx + bw * (1 - ratio);
+        const reached = currentWave >= fw;
+        const fy = reached ? by - 14 : by - 8;
+        ctx.strokeStyle = '#fff8e1';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(fx, by + 2);
+        ctx.lineTo(fx, fy);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ff1744';
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(fx - 11, fy + 4);
+        ctx.lineTo(fx, fy + 8);
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`Día ${currentDay}`, bx - 14, by + 14);
+
+      if (bannerTimer > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(160, 272, 680, 66);
+        ctx.fillStyle = '#ff5252';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(bannerText, 500, 314);
+      }
+    }
+
+    function drawSunIcon(x, y, r, angle = 0) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.fillStyle = '#ffb300';
+      for (let i = 0; i < 12; i++) {
+        ctx.rotate((Math.PI * 2) / 12);
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.25, -r * 0.8);
+        ctx.lineTo(0, -r * 1.25);
+        ctx.lineTo(r * 0.25, -r * 0.8);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffee58';
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.88, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawPlantSprite(id, x, y, timer, recoil) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      ctx.fillStyle = '#2e7d32';
+      ctx.beginPath();
+      ctx.ellipse(-12, 22, 13, 6, -0.3, 0, Math.PI * 2);
+      ctx.ellipse(12, 22, 13, 6, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (id === 'sunflower') {
+        const sway = Math.sin(timer * 2.5) * 2;
+        ctx.strokeStyle = '#388e3c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 22);
+        ctx.quadraticCurveTo(sway, 4, sway, -8);
+        ctx.stroke();
+
+        ctx.translate(sway, -10);
+        for (let i = 0; i < 14; i++) {
+          ctx.save();
+          ctx.rotate((i / 14) * Math.PI * 2 + timer * 0.2);
+          ctx.fillStyle = i % 2 === 0 ? '#ffca28' : '#ffb300';
+          ctx.beginPath();
+          ctx.ellipse(0, -18, 6, 11, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillStyle = '#6d4020';
+        ctx.beginPath();
+        ctx.arc(0, 0, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(-5, -3, 2.5, 0, Math.PI * 2);
+        ctx.arc(5, -3, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 2, 7, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = '#388e3c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 22);
+        ctx.lineTo(-2, -6);
+        ctx.stroke();
+
+        ctx.translate(-recoil * 4, -11);
+        ctx.fillStyle = '#2e7d32';
+        ctx.beginPath();
+        ctx.ellipse(-18, -4, 9, 5, -0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#66bb6a';
+        ctx.beginPath();
+        ctx.arc(0, 0, 17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1b5e20';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#66bb6a';
+        ctx.fillRect(8, -9, 17, 16);
+        ctx.strokeRect(8, -9, 17, 16);
+
+        ctx.fillStyle = '#102010';
+        ctx.beginPath();
+        ctx.ellipse(23, -1, 4, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(5, -6, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawZombieSprite(z) {
+      const sway = Math.sin(z.walkPhase) * 3;
+      ctx.save();
+      ctx.translate(z.x, z.y);
+
+      ctx.fillStyle = '#263238';
+      ctx.fillRect(-10, 12, 8, 16);
+      ctx.fillRect(2, 12 + sway * 0.5, 8, 16);
+
+      ctx.fillStyle = '#4e3c36';
+      ctx.fillRect(-14, -20 + sway, 28, 35);
+
+      ctx.fillStyle = '#c62828';
+      ctx.fillRect(-3, -15 + sway, 4, 14);
+
+      if (z.hasArm) {
+        ctx.fillStyle = '#3e2e29';
+        ctx.fillRect(-24, -12 + sway, 16, 7);
+        ctx.fillStyle = '#8fa876';
+        ctx.beginPath();
+        ctx.arc(-25, -8.5 + sway, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#2c201c';
+        ctx.fillRect(-17, -12 + sway, 5, 7);
+      }
+
+      if (z.hasHead) {
+        ctx.fillStyle = '#8fa876';
+        ctx.beginPath();
+        ctx.arc(0, -33 + sway, 16, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(-7, -35 + sway, 4.5, 0, Math.PI * 2);
+        ctx.arc(3, -34 + sway, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(-8, -35 + sway, 2, 0, Math.PI * 2);
+        ctx.arc(2, -34 + sway, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Protección: Cono o Cubo metálico
+        if (z.armorType === 'cone' && z.armorHp > 0) {
+          ctx.fillStyle = '#ff6d00';
+          ctx.beginPath();
+          ctx.moveTo(-14, -44 + sway);
+          ctx.lineTo(14, -44 + sway);
+          ctx.lineTo(0, -70 + sway);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#e65100';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (z.armorType === 'bucket' && z.armorHp > 0) {
+          ctx.fillStyle = '#90a4ae';
+          ctx.fillRect(-13, -64 + sway, 26, 22);
+          ctx.strokeStyle = '#455a64';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-13, -64 + sway, 26, 22);
+        }
+      } else {
+        ctx.fillStyle = '#6d8259';
+        ctx.fillRect(-5, -23 + sway, 10, 4);
+      }
+
+      ctx.restore();
+    }
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
+      const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
+      const col = Math.floor((mx - GRID_X) / CELL_W);
+      const row = Math.floor((my - GRID_Y) / CELL_H);
+      hoverCell = col >= 0 && col < COLS && row >= 0 && row < ROWS ? { col, row } : null;
+    });
+
+    canvas.addEventListener('click', e => {
+      if (state !== 'playing') return;
+      ensureAudio();
+
+      const rect = canvas.getBoundingClientRect();
+      const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
+      const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
+
+      if (mx >= 530 && mx <= 670 && my >= 14 && my <= 52) {
+        toggleMusic();
+        return;
+      }
+
+      if (mx >= 895 && mx <= 980 && my >= 14 && my <= 52) {
+        state = 'lobby';
+        openLobby(currentUser);
+        return;
+      }
+
+      for (let i = suns.length - 1; i >= 0; i--) {
+        const s = suns[i];
+        if (Math.hypot(mx - s.x, my - s.y) < 35) {
+          sun += s.value;
+          flyingSuns.push({ x: s.x, y: s.y });
+          floatingTexts.push({ x: s.x, y: s.y - 10, text: '+25', color: '#ffee58', life: 0.7 });
+          playSound('sun');
+          suns.splice(i, 1);
+          return;
+        }
+      }
+
+      availablePlants.forEach((id, i) => {
+        const cx = 112 + i * 78;
+        const cy = 13;
+        if (mx >= cx && mx <= cx + 68 && my >= cy && my <= cy + 76) {
+          const def = PLANT_DEFS[id];
+          if (sun >= def.cost && (cooldowns[id] || 0) <= 0) {
+            selectedCard = selectedCard === id ? null : id;
+            shovelActive = false;
+          }
+        }
+      });
+
+      if (mx >= 442 && mx <= 516 && my >= 12 && my <= 88) {
+        shovelActive = !shovelActive;
+        selectedCard = null;
+        return;
+      }
+
+      const col = Math.floor((mx - GRID_X) / CELL_W);
+      const row = Math.floor((my - GRID_Y) / CELL_H);
+      if (col >= 0 && col < COLS && row >= 0 && row < ROWS && activeRows.includes(row)) {
+        if (shovelActive && grid[row][col]) {
+          grid[row][col] = null;
+          shovelActive = false;
+          playSound('plant');
+          return;
+        }
+        if (selectedCard && !grid[row][col]) {
+          const def = PLANT_DEFS[selectedCard];
+          if (sun >= def.cost) {
+            sun -= def.cost;
+            cooldowns[selectedCard] = def.cooldown;
+            const initialDelay = def.id === 'sunflower'
+              ? 3.0 + Math.random() * 9.0
+              : 0.7;
+
+            // Si plantas tu primer girasol antes de la primera oleada, el primer zombi se adelanta un poco
+            if (def.id === 'sunflower' && !firstSunflowerPlanted) {
+              firstSunflowerPlanted = true;
+              if (currentWave === 0 && (nextWaveTime - levelTimer) > 4.0) {
+                nextWaveTime = Math.max(levelTimer + 3.5, nextWaveTime - 3.5);
+              }
+            }
+
+            grid[row][col] = {
+              id: def.id,
+              hp: def.hp,
+              timer: 0,
+              recoil: 0,
+              nextAction: initialDelay
+            };
+            selectedCard = null;
+            playSound('plant');
+          }
+        }
+      }
+    });
+
+    canvas.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      selectedCard = null;
+      shovelActive = false;
+    });
+
+    function loop(timestamp) {
+      const dt = Math.min(0.05, (timestamp - lastTime) / 1000 || 0);
+      lastTime = timestamp;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
