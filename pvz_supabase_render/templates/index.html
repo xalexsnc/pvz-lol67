@@ -124,8 +124,9 @@
     .error-msg {
       color: #ff8a80;
       font-size: 13px;
-      min-height: 18px;
+      min-height: 20px;
       margin-bottom: 10px;
+      word-break: break-word;
     }
     .primary-btn {
       width: 100%;
@@ -140,7 +141,11 @@
       text-shadow: 1px 2px 0 #1b5e20;
       box-shadow: 0 4px 0 #1b5e20;
     }
-    .primary-btn:active {
+    .primary-btn:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+    .primary-btn:active:not(:disabled) {
       transform: translateY(3px);
       box-shadow: 0 1px 0 #1b5e20;
     }
@@ -203,8 +208,8 @@
       <div class="auth-layout">
         <div class="card-box">
           <div class="tab-row">
-            <button class="tab-btn active" id="tab-login">Iniciar Sesión</button>
-            <button class="tab-btn" id="tab-register">Crear Cuenta</button>
+            <button type="button" class="tab-btn active" id="tab-login">Iniciar Sesión</button>
+            <button type="button" class="tab-btn" id="tab-register">Crear Cuenta</button>
           </div>
 
           <form id="auth-form">
@@ -305,6 +310,7 @@
     async function loadRanking() {
       try {
         const res = await fetch('/api/ranking');
+        if (!res.ok) return;
         const list = await res.json();
         const tbody = document.getElementById('ranking-body');
         if (!list.length) {
@@ -339,25 +345,47 @@
     document.getElementById('auth-form').onsubmit = async (e) => {
       e.preventDefault();
       authError.textContent = '';
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      const endpoint = authMode === 'login' ? '/api/login' : '/api/register';
+      const submitBtn = document.getElementById('auth-submit-btn');
+      const originalText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'CONECTANDO...';
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        authError.textContent = data.error || 'Error de autenticación';
-        return;
+      try {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const endpoint = authMode === 'login' ? '/api/login' : '/api/register';
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const rawText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (_) {
+          throw new Error('El servidor respondió con un error inesperado. Revisa los Logs en Render.');
+        }
+
+        if (!data.ok) {
+          authError.textContent = data.error || 'Error de autenticación';
+          return;
+        }
+        openLobby(data.user);
+      } catch (err) {
+        authError.textContent = err.message || 'No se pudo conectar con el servidor.';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
       }
-      openLobby(data.user);
     };
 
     document.getElementById('logout-btn').onclick = async () => {
-      await fetch('/api/logout', { method: 'POST' });
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+      } catch (e) {}
       currentUser = null;
       lobbyScreen.classList.add('hidden');
       authScreen.classList.remove('hidden');
@@ -366,11 +394,14 @@
 
     (async () => {
       loadRanking();
-      const res = await fetch('/api/me');
-      const data = await res.json();
-      if (data.logged_in) {
-        openLobby(data.user);
-      }
+      try {
+        const res = await fetch('/api/me');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.logged_in) {
+          openLobby(data.user);
+        }
+      } catch (e) {}
     })();
 
     // --- MOTOR DEL JUEGO ---
@@ -609,8 +640,12 @@
           currentUser = data.user;
           document.getElementById('win-msg').textContent =
             `¡Progreso guardado para ${currentUser.username}! Desbloqueado: Día ${currentUser.dia_actual}.`;
+        } else {
+          document.getElementById('win-msg').textContent = data.error || 'No se pudo guardar el progreso.';
         }
-      } catch (e) {}
+      } catch (e) {
+        document.getElementById('win-msg').textContent = 'Error de conexión al guardar progreso.';
+      }
     }
 
     function update(dt) {
