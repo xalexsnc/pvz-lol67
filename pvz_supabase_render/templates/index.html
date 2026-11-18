@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plants vs. Zombies - Multiusuario</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background: #141e10;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+    #game-wrapper {
+      position: relative;
+      width: 1000px;
+      height: 620px;
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.85);
+      border: 5px solid #3b2313;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #2e7d32;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at center, rgba(24, 38, 18, 0.92), rgba(10, 18, 8, 0.97));
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+      text-align: center;
+      padding: 24px;
+      z-index: 20;
+    }
+    .hidden {
+      display: none !important;
+    }
+    h1 {
+      font-size: 42px;
+      color: #aeea00;
+      text-shadow: 3px 4px 0 #1b5e20;
+      margin-bottom: 8px;
+    }
+    p.subtitle {
+      font-size: 15px;
+      color: #dcedc8;
+      margin-bottom: 18px;
+    }
+    .auth-layout {
+      display: flex;
+      gap: 24px;
+      align-items: stretch;
+      max-width: 820px;
+      width: 100%;
+    }
+    .card-box {
+      flex: 1;
+      background: #3e2723;
+      border: 4px solid #6d4c41;
+      border-radius: 14px;
+      padding: 22px;
+      text-align: left;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .tab-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      background: #5d4037;
+      border: 2px solid #8d6e63;
+      color: #fff8e1;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #7cb342;
+      border-color: #c5e1a5;
+      color: #1b2e0c;
+    }
+    .field {
+      margin-bottom: 14px;
+    }
+    .field label {
+      display: block;
+      font-size: 13px;
+      color: #ffe082;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .field input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 2px solid #8d6e63;
+      background: #fff8e1;
+      color: #212121;
+      font-size: 15px;
+      user-select: text;
+    }
+    .error-msg {
+      color: #ff8a80;
+      font-size: 13px;
+      min-height: 18px;
+      margin-bottom: 10px;
+    }
+    .primary-btn {
+      width: 100%;
+      background: linear-gradient(180deg, #9ccc65, #558b2f);
+      border: 3px solid #2e7d32;
+      color: #fff;
+      font-size: 19px;
+      font-weight: 800;
+      padding: 12px 24px;
+      border-radius: 10px;
+      cursor: pointer;
+      text-shadow: 1px 2px 0 #1b5e20;
+      box-shadow: 0 4px 0 #1b5e20;
+    }
+    .primary-btn:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 #1b5e20;
+    }
+    .ranking-title {
+      color: #ffd54f;
+      font-size: 18px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    table.ranking-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.ranking-table th {
+      text-align: left;
+      color: #bcaaa4;
+      border-bottom: 1px solid #6d4c41;
+      padding: 6px 4px;
+    }
+    table.ranking-table td {
+      padding: 7px 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: #fff8e1;
+    }
+    .user-stats {
+      background: #4e342e;
+      border: 3px solid #8d6e63;
+      border-radius: 12px;
+      padding: 18px 28px;
+      margin: 14px 0 22px 0;
+      min-width: 380px;
+    }
+    .user-stats p {
+      font-size: 16px;
+      margin: 6px 0;
+      color: #fff8e1;
+    }
+    .secondary-btn {
+      background: #5d4037;
+      border: 2px solid #a1887f;
+      color: #fff8e1;
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-wrapper">
+    <canvas id="gameCanvas" width="1000" height="620"></canvas>
+
+    <!-- Pantalla 1: Registro e Inicio de Sesión -->
+    <div id="auth-screen" class="overlay">
+      <h1>PLANTS VS. ZOMBIES</h1>
+      <p class="subtitle">Versión Base (Girasol, Lanzaguisantes y Zombi Común) — Guarda tu progreso en la nube</p>
+
+      <div class="auth-layout">
+        <div class="card-box">
+          <div class="tab-row">
+            <button class="tab-btn active" id="tab-login">Iniciar Sesión</button>
+            <button class="tab-btn" id="tab-register">Crear Cuenta</button>
+          </div>
+
+          <form id="auth-form">
+            <div class="field">
+              <label for="username">Nombre de Jugador</label>
+              <input type="text" id="username" placeholder="Ej: CrazyDave" required />
+            </div>
+            <div class="field">
+              <label for="password">Contraseña</label>
+              <input type="password" id="password" placeholder="••••" required />
+            </div>
+            <div class="error-msg" id="auth-error"></div>
+            <button type="submit" class="primary-btn" id="auth-submit-btn">ENTRAR AL JARDÍN</button>
+          </form>
+        </div>
+
+        <div class="card-box">
+          <div class="ranking-title">Tabla de Jugadores Registrados</div>
+          <table class="ranking-table">
+            <thead>
+              <tr>
+                <th>Jugador</th>
+                <th>Día</th>
+                <th>Zombis</th>
+                <th>Victorias</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-body">
+              <tr><td colspan="4">Cargando jugadores...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pantalla 2: Lobby del Jugador -->
+    <div id="lobby-screen" class="overlay hidden">
+      <h1 id="welcome-title">¡HOLA, JUGADOR!</h1>
+      <p class="subtitle">Tu progreso se guarda automáticamente en Supabase al completar cada día.</p>
+
+      <div class="user-stats">
+        <p><strong>Progreso actual:</strong> <span id="stat-dia">Día 1</span></p>
+        <p><strong>Zombis derrotados:</strong> <span id="stat-zombis">0</span></p>
+        <p><strong>Partidas ganadas:</strong> <span id="stat-victorias">0</span></p>
+      </div>
+
+      <div style="width: 320px;">
+        <button class="primary-btn" id="play-day-btn">JUGAR DÍA 1</button>
+      </div>
+      <button class="secondary-btn" id="logout-btn">Cambiar de Usuario / Cerrar Sesión</button>
+    </div>
+
+    <!-- Pantalla 3: Victoria -->
+    <div id="win-screen" class="overlay hidden">
+      <h1 id="win-title">¡DÍA COMPLETADO!</h1>
+      <p class="subtitle" id="win-msg">Progreso guardado en tu cuenta.</p>
+      <div style="width: 320px;">
+        <button class="primary-btn" id="next-day-btn">CONTINUAR AL SIGUIENTE DÍA</button>
+      </div>
+    </div>
+
+    <!-- Pantalla 4: Derrota -->
+    <div id="lose-screen" class="overlay hidden">
+      <h1 style="color:#ff5252;">¡LOS ZOMBIS SE COMIERON TUS SESOS!</h1>
+      <p class="subtitle">Planta girasoles al fondo para juntar soles y pon lanzaguisantes en cada carril.</p>
+      <div style="width: 320px;">
+        <button class="primary-btn" id="retry-btn">REINTENTAR DÍA</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let authMode = 'login';
+    let currentUser = null;
+
+    const authScreen = document.getElementById('auth-screen');
+    const lobbyScreen = document.getElementById('lobby-screen');
+    const winScreen = document.getElementById('win-screen');
+    const loseScreen = document.getElementById('lose-screen');
+    const authError = document.getElementById('auth-error');
+
+    document.getElementById('tab-login').onclick = () => {
+      authMode = 'login';
+      document.getElementById('tab-login').classList.add('active');
+      document.getElementById('tab-register').classList.remove('active');
+      document.getElementById('auth-submit-btn').textContent = 'ENTRAR AL JARDÍN';
+      authError.textContent = '';
+    };
+
+    document.getElementById('tab-register').onclick = () => {
+      authMode = 'register';
+      document.getElementById('tab-register').classList.add('active');
+      document.getElementById('tab-login').classList.remove('active');
+      document.getElementById('auth-submit-btn').textContent = 'REGISTRARME Y JUGAR';
+      authError.textContent = '';
+    };
+
+    async function loadRanking() {
+      try {
+        const res = await fetch('/api/ranking');
+        const list = await res.json();
+        const tbody = document.getElementById('ranking-body');
+        if (!list.length) {
+          tbody.innerHTML = '<tr><td colspan="4">Aún no hay jugadores registrados.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = list.map(u => `
+          <tr>
+            <td><strong>${u.username}</strong></td>
+            <td>Día ${u.dia_actual}</td>
+            <td>${u.zombis_derrotados}</td>
+            <td>${u.partidas_ganadas}</td>
+          </tr>
+        `).join('');
+      } catch (e) {}
+    }
+
+    function openLobby(user) {
+      currentUser = user;
+      authScreen.classList.add('hidden');
+      winScreen.classList.add('hidden');
+      loseScreen.classList.add('hidden');
+      lobbyScreen.classList.remove('hidden');
+
+      document.getElementById('welcome-title').textContent = `¡HOLA, ${user.username.toUpperCase()}!`;
+      document.getElementById('stat-dia').textContent = `Día ${user.dia_actual}`;
+      document.getElementById('stat-zombis').textContent = user.zombis_derrotados;
+      document.getElementById('stat-victorias').textContent = user.partidas_ganadas;
+      document.getElementById('play-day-btn').textContent = `JUGAR DÍA ${user.dia_actual}`;
+    }
+
+    document.getElementById('auth-form').onsubmit = async (e) => {
+      e.preventDefault();
+      authError.textContent = '';
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const endpoint = authMode === 'login' ? '/api/login' : '/api/register';
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        authError.textContent = data.error || 'Error de autenticación';
+        return;
+      }
+      openLobby(data.user);
+    };
+
+    document.getElementById('logout-btn').onclick = async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      currentUser = null;
+      lobbyScreen.classList.add('hidden');
+      authScreen.classList.remove('hidden');
+      loadRanking();
+    };
+
+    (async () => {
+      loadRanking();
+      const res = await fetch('/api/me');
+      const data = await res.json();
+      if (data.logged_in) {
+        openLobby(data.user);
+      }
+    })();
+
+    // --- MOTOR DEL JUEGO ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function playSound(type) {
+      try {
+        if (!audioCtx) audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+
+        if (type === 'sun') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(540, now);
+          osc.frequency.exponentialRampToValueAtTime(920, now + 0.14);
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+          osc.start(now);
+          osc.stop(now + 0.16);
+        } else if (type === 'plant') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(190, now);
+          osc.frequency.exponentialRampToValueAtTime(85, now + 0.12);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+          osc.start(now);
+          osc.stop(now + 0.13);
+        } else if (type === 'shoot') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(380, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.08);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+          osc.start(now);
+          osc.stop(now + 0.08);
+        } else if (type === 'hit') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(135, now);
+          osc.frequency.exponentialRampToValueAtTime(60, now + 0.07);
+          gain.gain.setValueAtTime(0.06, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+          osc.start(now);
+          osc.stop(now + 0.07);
+        }
+      } catch (e) {}
+    }
+
+    const GRID_X = 230;
+    const GRID_Y = 105;
+    const CELL_W = 80;
+    const CELL_H = 96;
+    const COLS = 9;
+    const ROWS = 5;
+
+    const PLANT_DEFS = {
+      sunflower: {
+        id: 'sunflower',
+        name: 'Girasol',
+        cost: 50,
+        cooldown: 5.0,
+        hp: 300
+      },
+      peashooter: {
+        id: 'peashooter',
+        name: 'Lanzaguisantes',
+        cost: 100,
+        cooldown: 5.0,
+        hp: 300
+      }
+    };
+
+    const AVAILABLE_PLANTS = ['sunflower', 'peashooter'];
+
+    let state = 'lobby';
+    let currentDay = 1;
+    let activeRows = [2];
+    let sun = 150;
+    let selectedCard = null;
+    let shovelActive = false;
+    let hoverCell = null;
+
+    let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    let zombies = [];
+    let peas = [];
+    let suns = [];
+    let flyingSuns = [];
+    let mowers = [];
+    let particles = [];
+    let floatingTexts = [];
+    let cooldowns = { sunflower: 0, peashooter: 0 };
+
+    let totalZombiesInDay = 5;
+    let spawnedZombies = 0;
+    let killedZombiesInDay = 0;
+    let levelTimer = 0;
+    let nextSpawnTime = 20;
+    let spawnInterval = 15;
+    let skySunTimer = 6;
+    let bannerText = '';
+    let bannerTimer = 0;
+    let globalTime = 0;
+    let lastTime = 0;
+
+    function configureDay(dayNum) {
+      currentDay = dayNum;
+      if (dayNum === 1) {
+        activeRows = [2];
+        totalZombiesInDay = 5;
+        spawnInterval = 16;
+      } else if (dayNum === 2) {
+        activeRows = [1, 2, 3];
+        totalZombiesInDay = 8;
+        spawnInterval = 14;
+      } else {
+        activeRows = [0, 1, 2, 3, 4];
+        totalZombiesInDay = 8 + dayNum * 2;
+        spawnInterval = Math.max(8, 15 - dayNum);
+      }
+    }
+
+    function startDay(dayNum) {
+      configureDay(dayNum);
+      sun = 150;
+      selectedCard = null;
+      shovelActive = false;
+
+      grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+      zombies = [];
+      peas = [];
+      suns = [];
+      flyingSuns = [];
+      particles = [];
+      floatingTexts = [];
+      cooldowns = { sunflower: 0, peashooter: 0 };
+
+      mowers = activeRows.map(r => ({
+        row: r,
+        x: GRID_X - 46,
+        y: GRID_Y + r * CELL_H + CELL_H * 0.56,
+        active: false,
+        used: false
+      }));
+
+      spawnedZombies = 0;
+      killedZombiesInDay = 0;
+      levelTimer = 0;
+      nextSpawnTime = 20;
+      skySunTimer = 5.5;
+
+      lobbyScreen.classList.add('hidden');
+      winScreen.classList.add('hidden');
+      loseScreen.classList.add('hidden');
+      state = 'playing';
+
+      bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
+      bannerTimer = 2.8;
+    }
+
+    document.getElementById('play-day-btn').onclick = () => {
+      startDay(currentUser ? currentUser.dia_actual : 1);
+    };
+    document.getElementById('retry-btn').onclick = () => startDay(currentDay);
+    document.getElementById('next-day-btn').onclick = () => {
+      startDay(currentUser ? currentUser.dia_actual : currentDay + 1);
+    };
+
+    function spawnSkySun() {
+      const targetX = GRID_X + 60 + Math.random() * (COLS * CELL_W - 120);
+      const targetY = GRID_Y + 60 + Math.random() * (ROWS * CELL_H - 100);
+      suns.push({
+        x: targetX,
+        y: 85,
+        targetY,
+        vy: 42,
+        value: 25,
+        life: 11,
+        bob: Math.random() * Math.PI * 2
+      });
+    }
+
+    function spawnPlantSun(col, row) {
+      const x = GRID_X + col * CELL_W + CELL_W * 0.5;
+      const y = GRID_Y + row * CELL_H + CELL_H * 0.4;
+      suns.push({
+        x: x + (Math.random() * 24 - 12),
+        y: y - 10,
+        targetY: y + 20,
+        vy: 30,
+        value: 25,
+        life: 12,
+        bob: 0
+      });
+    }
+
+    function spawnCommonZombie() {
+      const row = activeRows[Math.floor(Math.random() * activeRows.length)];
+      zombies.push({
+        row,
+        x: 985,
+        y: GRID_Y + row * CELL_H + CELL_H * 0.56,
+        hp: 200,
+        maxHp: 200,
+        speed: 12.5,
+        eatTimer: 0,
+        walkPhase: Math.random() * 6
+      });
+    }
+
+    async function handleVictory() {
+      state = 'win';
+      const nextDay = currentDay + 1;
+      document.getElementById('win-title').textContent = `¡DÍA ${currentDay} COMPLETADO!`;
+      document.getElementById('win-msg').textContent = 'Guardando progreso en la nube...';
+      winScreen.classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/save_progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dia_actual: nextDay,
+            zombis_derrotados: killedZombiesInDay,
+            gano_nivel: true
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          currentUser = data.user;
+          document.getElementById('win-msg').textContent =
+            `¡Progreso guardado para ${currentUser.username}! Desbloqueado: Día ${currentUser.dia_actual}.`;
+        }
+      } catch (e) {}
+    }
+
+    function update(dt) {
+      globalTime += dt;
+      if (state !== 'playing') return;
+
+      levelTimer += dt;
+      if (bannerTimer > 0) bannerTimer -= dt;
+
+      for (const id in cooldowns) {
+        if (cooldowns[id] > 0) cooldowns[id] = Math.max(0, cooldowns[id] - dt);
+      }
+
+      skySunTimer -= dt;
+      if (skySunTimer <= 0) {
+        spawnSkySun();
+        skySunTimer = 8.5;
+      }
+
+      if (spawnedZombies < totalZombiesInDay && levelTimer >= nextSpawnTime) {
+        if (spawnedZombies === 0) {
+          bannerText = '¡Se acerca un zombi!';
+          bannerTimer = 2.2;
+        }
+        spawnCommonZombie();
+        spawnedZombies++;
+        nextSpawnTime = levelTimer + spawnInterval;
+      }
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const p = grid[r][c];
+          if (!p) continue;
+          p.timer += dt;
+          if (p.recoil > 0) p.recoil = Math.max(0, p.recoil - dt * 4);
+
+          if (p.id === 'sunflower') {
+            if (p.timer >= p.nextAction) {
+              spawnPlantSun(c, r);
+              p.nextAction = p.timer + 19;
+            }
+          } else if (p.id === 'peashooter') {
+            const hasTarget = zombies.some(z => z.row === r && z.x > GRID_X + c * CELL_W && z.x < 985);
+            if (hasTarget && p.timer >= p.nextAction) {
+              peas.push({
+                x: GRID_X + c * CELL_W + 60,
+                y: GRID_Y + r * CELL_H + 34,
+                row: r,
+                dmg: 20
+              });
+              p.recoil = 1;
+              playSound('shoot');
+              p.nextAction = p.timer + 1.5;
+            }
+          }
+        }
+      }
+
+      for (let i = peas.length - 1; i >= 0; i--) {
+        const pea = peas[i];
+        pea.x += 340 * dt;
+        let hit = false;
+
+        for (const z of zombies) {
+          if (z.row === pea.row && z.hp > 0 && Math.abs(z.x - pea.x) < 22) {
+            playSound('hit');
+            z.hp -= pea.dmg;
+            for (let k = 0; k < 5; k++) {
+              particles.push({
+                x: pea.x,
+                y: pea.y,
+                vx: (Math.random() - 0.5) * 90,
+                vy: (Math.random() - 0.5) * 90,
+                color: '#aeea00',
+                size: 4,
+                life: 0.25
+              });
+            }
+            hit = true;
+            break;
+          }
+        }
+        if (hit || pea.x > 1010) peas.splice(i, 1);
+      }
+
+      for (let i = zombies.length - 1; i >= 0; i--) {
+        const z = zombies[i];
+        if (z.hp <= 0) {
+          killedZombiesInDay++;
+          zombies.splice(i, 1);
+          continue;
+        }
+
+        const col = Math.floor((z.x - GRID_X - 15) / CELL_W);
+        const plant = col >= 0 && col < COLS ? grid[z.row][col] : null;
+
+        if (plant) {
+          z.eatTimer += dt;
+          if (z.eatTimer >= 0.5) {
+            z.eatTimer = 0;
+            plant.hp -= 50;
+            if (plant.hp <= 0) grid[z.row][col] = null;
+          }
+        } else {
+          z.x -= z.speed * dt;
+          z.walkPhase += dt * 4.2;
+        }
+
+        if (z.x < GRID_X - 10) {
+          const mower = mowers.find(m => m.row === z.row && !m.used);
+          if (mower) {
+            mower.active = true;
+          } else if (z.x < GRID_X - 65) {
+            state = 'lose';
+            loseScreen.classList.remove('hidden');
+            return;
+          }
+        }
+      }
+
+      mowers.forEach(m => {
+        if (m.active && !m.used) {
+          m.x += 470 * dt;
+          zombies.forEach(z => {
+            if (z.row === m.row && Math.abs(z.x - m.x) < 42) z.hp = 0;
+          });
+          if (m.x > 1020) m.used = true;
+        }
+      });
+
+      for (let i = suns.length - 1; i >= 0; i--) {
+        const s = suns[i];
+        s.bob += dt * 3;
+        if (s.y < s.targetY) s.y += s.vy * dt;
+        s.life -= dt;
+        if (s.life <= 0) suns.splice(i, 1);
+      }
+
+      for (let i = flyingSuns.length - 1; i >= 0; i--) {
+        const fs = flyingSuns[i];
+        fs.x += (59 - fs.x) * Math.min(1, dt * 10);
+        fs.y += (42 - fs.y) * Math.min(1, dt * 10);
+        if (Math.hypot(59 - fs.x, 42 - fs.y) < 14) flyingSuns.splice(i, 1);
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const pt = particles[i];
+        pt.x += pt.vx * dt;
+        pt.y += pt.vy * dt;
+        pt.life -= dt;
+        if (pt.life <= 0) particles.splice(i, 1);
+      }
+
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.y -= 35 * dt;
+        ft.life -= dt;
+        if (ft.life <= 0) floatingTexts.splice(i, 1);
+      }
+
+      if (spawnedZombies >= totalZombiesInDay && zombies.length === 0) {
+        handleVictory();
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#4e342e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#5d8aa8';
+      ctx.fillRect(0, 0, canvas.width, 98);
+
+      ctx.fillStyle = '#e8dcc5';
+      ctx.fillRect(0, 98, 175, 522);
+      ctx.fillStyle = '#8d3b2b';
+      ctx.fillRect(0, 98, 182, 36);
+      ctx.fillStyle = '#6d4c41';
+      ctx.fillRect(30, 275, 76, 155);
+      ctx.fillStyle = '#bdbdbd';
+      ctx.fillRect(150, 98, 28, 522);
+
+      for (let r = 0; r < ROWS; r++) {
+        const isActive = activeRows.includes(r);
+        for (let c = 0; c < COLS; c++) {
+          const x = GRID_X + c * CELL_W;
+          const y = GRID_Y + r * CELL_H;
+          if (isActive) {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#68b832' : '#5aa328';
+          } else {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#7c583a' : '#6e4c30';
+          }
+          ctx.fillRect(x, y, CELL_W, CELL_H);
+        }
+      }
+
+      if (hoverCell && state === 'playing') {
+        const { col, row } = hoverCell;
+        if (activeRows.includes(row)) {
+          const hx = GRID_X + col * CELL_W;
+          const hy = GRID_Y + row * CELL_H;
+          if (selectedCard && !grid[row][col]) {
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
+            ctx.fillRect(hx, hy, CELL_W, CELL_H);
+          } else if (shovelActive && grid[row][col]) {
+            ctx.fillStyle = 'rgba(255,82,82,0.35)';
+            ctx.fillRect(hx, hy, CELL_W, CELL_H);
+          }
+        }
+      }
+
+      ctx.fillStyle = '#6d4726';
+      ctx.fillRect(10, 8, 420, 86);
+      ctx.strokeStyle = '#3b2313';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(10, 8, 420, 86);
+
+      ctx.fillStyle = '#4a2e16';
+      ctx.fillRect(18, 13, 82, 76);
+      drawSunIcon(59, 41, 19, globalTime * 0.8);
+      ctx.fillStyle = '#f7e8b2';
+      ctx.fillRect(24, 65, 70, 20);
+      ctx.fillStyle = '#1b1108';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(sun, 59, 81);
+
+      AVAILABLE_PLANTS.forEach((id, i) => {
+        const def = PLANT_DEFS[id];
+        const cx = 112 + i * 78;
+        const cy = 13;
+        const canAfford = sun >= def.cost;
+        const cd = cooldowns[id] || 0;
+
+        ctx.fillStyle = selectedCard === id ? '#fff59d' : canAfford && cd <= 0 ? '#e6dec8' : '#8d8678';
+        ctx.fillRect(cx, cy, 68, 76);
+        ctx.strokeStyle = selectedCard === id ? '#ffca28' : '#3b2313';
+        ctx.lineWidth = selectedCard === id ? 3.5 : 2;
+        ctx.strokeRect(cx, cy, 68, 76);
+
+        ctx.save();
+        ctx.translate(cx + 34, cy + 36);
+        ctx.scale(0.54, 0.54);
+        drawPlantSprite(id, 0, 0, 0, 0);
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillRect(cx + 4, cy + 56, 60, 17);
+        ctx.fillStyle = canAfford ? '#1b1108' : '#b71c1c';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(def.cost, cx + 34, cy + 69);
+
+        if (cd > 0) {
+          const ratio = cd / def.cooldown;
+          ctx.fillStyle = 'rgba(0,0,0,0.58)';
+          ctx.fillRect(cx, cy, 68, 76 * ratio);
+        }
+      });
+
+      ctx.fillStyle = shovelActive ? '#ffca28' : '#6d4726';
+      ctx.fillRect(442, 12, 74, 76);
+      ctx.strokeStyle = '#3b2313';
+      ctx.strokeRect(442, 12, 74, 76);
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('PALA', 479, 55);
+
+      if (currentUser) {
+        ctx.fillStyle = '#3e2723';
+        ctx.fillRect(720, 14, 165, 38);
+        ctx.fillStyle = '#ffd54f';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(`Jugador: ${currentUser.username}`, 802, 38);
+      }
+
+      ctx.fillStyle = '#4e342e';
+      ctx.fillRect(895, 14, 85, 38);
+      ctx.strokeStyle = '#a1887f';
+      ctx.strokeRect(895, 14, 85, 38);
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('PERFIL', 937, 38);
+
+      mowers.forEach(m => {
+        if (m.used) return;
+        ctx.fillStyle = '#d32f2f';
+        ctx.fillRect(m.x - 20, m.y - 14, 40, 22);
+        ctx.fillStyle = '#212121';
+        ctx.beginPath();
+        ctx.arc(m.x - 10, m.y + 10, 8, 0, Math.PI * 2);
+        ctx.arc(m.x + 12, m.y + 10, 8, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const p = grid[r][c];
+          if (!p) continue;
+          drawPlantSprite(
+            p.id,
+            GRID_X + c * CELL_W + CELL_W / 2,
+            GRID_Y + r * CELL_H + CELL_H / 2 + 8,
+            p.timer,
+            p.recoil || 0
+          );
+        }
+      }
+
+      peas.forEach(pea => {
+        ctx.fillStyle = '#76ff03';
+        ctx.beginPath();
+        ctx.arc(pea.x, pea.y, 9.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1b5e20';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+
+      zombies.forEach(z => drawZombieSprite(z));
+
+      suns.forEach(s => {
+        const pulse = 1 + Math.sin(s.bob) * 0.08;
+        drawSunIcon(s.x, s.y, 23 * pulse, globalTime * 1.2);
+      });
+      flyingSuns.forEach(fs => drawSunIcon(fs.x, fs.y, 20, globalTime * 3));
+
+      particles.forEach(pt => {
+        ctx.fillStyle = pt.color;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      floatingTexts.forEach(ft => {
+        ctx.fillStyle = ft.color;
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(ft.text, ft.x, ft.y);
+      });
+
+      const bx = 760, by = 590, bw = 210, bh = 18;
+      ctx.fillStyle = '#1b1108';
+      ctx.fillRect(bx, by, bw, bh);
+      const progress = Math.min(1, spawnedZombies / totalZombiesInDay);
+      ctx.fillStyle = '#76ff03';
+      ctx.fillRect(bx + bw * (1 - progress), by, bw * progress, bh);
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`Día ${currentDay}`, bx - 14, by + 14);
+
+      if (bannerTimer > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(160, 272, 680, 66);
+        ctx.fillStyle = '#ff5252';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(bannerText, 500, 314);
+      }
+    }
+
+    function drawSunIcon(x, y, r, angle = 0) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.fillStyle = '#ffb300';
+      for (let i = 0; i < 12; i++) {
+        ctx.rotate((Math.PI * 2) / 12);
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.25, -r * 0.8);
+        ctx.lineTo(0, -r * 1.25);
+        ctx.lineTo(r * 0.25, -r * 0.8);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffee58';
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.88, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawPlantSprite(id, x, y, timer, recoil) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      ctx.fillStyle = '#2e7d32';
+      ctx.beginPath();
+      ctx.ellipse(-12, 22, 13, 6, -0.3, 0, Math.PI * 2);
+      ctx.ellipse(12, 22, 13, 6, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (id === 'sunflower') {
+        const sway = Math.sin(timer * 2.5) * 2;
+        ctx.strokeStyle = '#388e3c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 22);
+        ctx.quadraticCurveTo(sway, 4, sway, -8);
+        ctx.stroke();
+
+        ctx.translate(sway, -10);
+        for (let i = 0; i < 14; i++) {
+          ctx.save();
+          ctx.rotate((i / 14) * Math.PI * 2 + timer * 0.2);
+          ctx.fillStyle = i % 2 === 0 ? '#ffca28' : '#ffb300';
+          ctx.beginPath();
+          ctx.ellipse(0, -18, 6, 11, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillStyle = '#6d4020';
+        ctx.beginPath();
+        ctx.arc(0, 0, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(-5, -3, 2.5, 0, Math.PI * 2);
+        ctx.arc(5, -3, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 2, 7, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = '#388e3c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 22);
+        ctx.lineTo(-2, -6);
+        ctx.stroke();
+
+        ctx.translate(-recoil * 4, -11);
+        ctx.fillStyle = '#2e7d32';
+        ctx.beginPath();
+        ctx.ellipse(-18, -4, 9, 5, -0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#66bb6a';
+        ctx.beginPath();
+        ctx.arc(0, 0, 17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1b5e20';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#66bb6a';
+        ctx.fillRect(8, -9, 17, 16);
+        ctx.strokeRect(8, -9, 17, 16);
+
+        ctx.fillStyle = '#102010';
+        ctx.beginPath();
+        ctx.ellipse(23, -1, 4, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(5, -6, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawZombieSprite(z) {
+      const sway = Math.sin(z.walkPhase) * 3;
+      ctx.save();
+      ctx.translate(z.x, z.y);
+
+      ctx.fillStyle = '#263238';
+      ctx.fillRect(-10, 12, 8, 16);
+      ctx.fillRect(2, 12 + sway * 0.5, 8, 16);
+
+      ctx.fillStyle = '#4e3c36';
+      ctx.fillRect(-14, -20 + sway, 28, 35);
+
+      ctx.fillStyle = '#c62828';
+      ctx.fillRect(-3, -15 + sway, 4, 14);
+
+      ctx.fillStyle = '#8fa876';
+      ctx.beginPath();
+      ctx.arc(0, -33 + sway, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(-7, -35 + sway, 4.5, 0, Math.PI * 2);
+      ctx.arc(3, -34 + sway, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(-8, -35 + sway, 2, 0, Math.PI * 2);
+      ctx.arc(2, -34 + sway, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
+      const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
+      const col = Math.floor((mx - GRID_X) / CELL_W);
+      const row = Math.floor((my - GRID_Y) / CELL_H);
+      hoverCell = col >= 0 && col < COLS && row >= 0 && row < ROWS ? { col, row } : null;
+    });
+
+    canvas.addEventListener('click', e => {
+      if (state !== 'playing') return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
+      const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
+
+      if (mx >= 895 && mx <= 980 && my >= 14 && my <= 52) {
+        state = 'lobby';
+        openLobby(currentUser);
+        return;
+      }
+
+      for (let i = suns.length - 1; i >= 0; i--) {
+        const s = suns[i];
+        if (Math.hypot(mx - s.x, my - s.y) < 35) {
+          sun += s.value;
+          flyingSuns.push({ x: s.x, y: s.y });
+          floatingTexts.push({ x: s.x, y: s.y - 10, text: '+25', color: '#ffee58', life: 0.7 });
+          playSound('sun');
+          suns.splice(i, 1);
+          return;
+        }
+      }
+
+      AVAILABLE_PLANTS.forEach((id, i) => {
+        const cx = 112 + i * 78;
+        const cy = 13;
+        if (mx >= cx && mx <= cx + 68 && my >= cy && my <= cy + 76) {
+          const def = PLANT_DEFS[id];
+          if (sun >= def.cost && (cooldowns[id] || 0) <= 0) {
+            selectedCard = selectedCard === id ? null : id;
+            shovelActive = false;
+          }
+        }
+      });
+
+      if (mx >= 442 && mx <= 516 && my >= 12 && my <= 88) {
+        shovelActive = !shovelActive;
+        selectedCard = null;
+        return;
+      }
+
+      const col = Math.floor((mx - GRID_X) / CELL_W);
+      const row = Math.floor((my - GRID_Y) / CELL_H);
+      if (col >= 0 && col < COLS && row >= 0 && row < ROWS && activeRows.includes(row)) {
+        if (shovelActive && grid[row][col]) {
+          grid[row][col] = null;
+          shovelActive = false;
+          playSound('plant');
+          return;
+        }
+        if (selectedCard && !grid[row][col]) {
+          const def = PLANT_DEFS[selectedCard];
+          if (sun >= def.cost) {
+            sun -= def.cost;
+            cooldowns[selectedCard] = def.cooldown;
+            grid[row][col] = {
+              id: def.id,
+              hp: def.hp,
+              timer: 0,
+              recoil: 0,
+              nextAction: def.id === 'sunflower' ? 7 : 1.0
+            };
+            selectedCard = null;
+            playSound('plant');
+          }
+        }
+      }
+    });
+
+    canvas.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      selectedCard = null;
+      shovelActive = false;
+    });
+
+    function loop(timestamp) {
+      const dt = Math.min(0.05, (timestamp - lastTime) / 1000 || 0);
+      lastTime = timestamp;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
