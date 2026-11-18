@@ -184,6 +184,11 @@
       margin: 6px 0;
       color: #fff8e1;
     }
+    .lobby-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+    }
     .secondary-btn {
       background: #5d4037;
       border: 2px solid #a1887f;
@@ -192,7 +197,44 @@
       border-radius: 8px;
       cursor: pointer;
       font-weight: bold;
-      margin-top: 12px;
+    }
+    .danger-btn {
+      background: #7f1d1d;
+      border: 2px solid #ef5350;
+      color: #ffebee;
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .danger-btn:hover {
+      background: #991b1b;
+    }
+    .confirm-box {
+      background: #3b1414;
+      border: 2px solid #ef5350;
+      border-radius: 10px;
+      padding: 14px 20px;
+      margin-top: 14px;
+      max-width: 440px;
+    }
+    .confirm-box p {
+      font-size: 14px;
+      color: #ffcdd2;
+      margin-bottom: 10px;
+    }
+    .unlock-banner {
+      background: #3e2723;
+      border: 3px solid #ffca28;
+      border-radius: 12px;
+      padding: 14px 24px;
+      margin-bottom: 18px;
+      color: #fff8e1;
+    }
+    .unlock-banner h3 {
+      color: #ffd54f;
+      font-size: 20px;
+      margin-bottom: 4px;
     }
   </style>
 </head>
@@ -203,7 +245,7 @@
     <!-- Pantalla 1: Registro e Inicio de Sesión -->
     <div id="auth-screen" class="overlay">
       <h1>PLANTS VS. ZOMBIES</h1>
-      <p class="subtitle">Versión Base (Girasol, Lanzaguisantes y Zombi Común) — Guarda tu progreso en la nube</p>
+      <p class="subtitle">Versión Base — Guarda tu progreso en la nube</p>
 
       <div class="auth-layout">
         <div class="card-box">
@@ -252,6 +294,7 @@
 
       <div class="user-stats">
         <p><strong>Progreso actual:</strong> <span id="stat-dia">Día 1</span></p>
+        <p><strong>Plantas desbloqueadas:</strong> <span id="stat-plantas">Lanzaguisantes</span></p>
         <p><strong>Zombis derrotados:</strong> <span id="stat-zombis">0</span></p>
         <p><strong>Partidas ganadas:</strong> <span id="stat-victorias">0</span></p>
       </div>
@@ -259,12 +302,29 @@
       <div style="width: 320px;">
         <button class="primary-btn" id="play-day-btn">JUGAR DÍA 1</button>
       </div>
-      <button class="secondary-btn" id="logout-btn">Cambiar de Usuario / Cerrar Sesión</button>
+
+      <div class="lobby-actions">
+        <button class="secondary-btn" id="logout-btn">Cambiar de Usuario / Cerrar Sesión</button>
+        <button class="danger-btn" id="ask-delete-btn">Eliminar Cuenta</button>
+      </div>
+
+      <div id="delete-confirm-box" class="confirm-box hidden">
+        <p>¿Seguro que deseas eliminar tu cuenta y todo tu progreso? Esta acción no se puede deshacer.</p>
+        <div class="error-msg" id="delete-error"></div>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button class="danger-btn" id="confirm-delete-btn">Sí, eliminar definitivamente</button>
+          <button class="secondary-btn" id="cancel-delete-btn">Cancelar</button>
+        </div>
+      </div>
     </div>
 
     <!-- Pantalla 3: Victoria -->
     <div id="win-screen" class="overlay hidden">
       <h1 id="win-title">¡DÍA COMPLETADO!</h1>
+      <div id="unlock-box" class="unlock-banner hidden">
+        <h3>¡NUEVA PLANTA DESBLOQUEADA: GIRASOL!</h3>
+        <p>Costo: 50 soles — Produce soles adicionales durante la batalla.</p>
+      </div>
       <p class="subtitle" id="win-msg">Progreso guardado en tu cuenta.</p>
       <div style="width: 320px;">
         <button class="primary-btn" id="next-day-btn">CONTINUAR AL SIGUIENTE DÍA</button>
@@ -274,7 +334,7 @@
     <!-- Pantalla 4: Derrota -->
     <div id="lose-screen" class="overlay hidden">
       <h1 style="color:#ff5252;">¡LOS ZOMBIS SE COMIERON TUS SESOS!</h1>
-      <p class="subtitle">Planta girasoles al fondo para juntar soles y pon lanzaguisantes en cada carril.</p>
+      <p class="subtitle" id="lose-tip">Recoge los soles del cielo y planta lanzaguisantes para defender el jardín.</p>
       <div style="width: 320px;">
         <button class="primary-btn" id="retry-btn">REINTENTAR DÍA</button>
       </div>
@@ -290,6 +350,8 @@
     const winScreen = document.getElementById('win-screen');
     const loseScreen = document.getElementById('lose-screen');
     const authError = document.getElementById('auth-error');
+    const deleteConfirmBox = document.getElementById('delete-confirm-box');
+    const deleteError = document.getElementById('delete-error');
 
     document.getElementById('tab-login').onclick = () => {
       authMode = 'login';
@@ -333,10 +395,14 @@
       authScreen.classList.add('hidden');
       winScreen.classList.add('hidden');
       loseScreen.classList.add('hidden');
+      deleteConfirmBox.classList.add('hidden');
+      deleteError.textContent = '';
       lobbyScreen.classList.remove('hidden');
 
       document.getElementById('welcome-title').textContent = `¡HOLA, ${user.username.toUpperCase()}!`;
       document.getElementById('stat-dia').textContent = `Día ${user.dia_actual}`;
+      document.getElementById('stat-plantas').textContent =
+        user.dia_actual >= 2 ? 'Lanzaguisantes, Girasol' : 'Lanzaguisantes';
       document.getElementById('stat-zombis').textContent = user.zombis_derrotados;
       document.getElementById('stat-victorias').textContent = user.partidas_ganadas;
       document.getElementById('play-day-btn').textContent = `JUGAR DÍA ${user.dia_actual}`;
@@ -390,6 +456,44 @@
       lobbyScreen.classList.add('hidden');
       authScreen.classList.remove('hidden');
       loadRanking();
+    };
+
+    document.getElementById('ask-delete-btn').onclick = () => {
+      deleteError.textContent = '';
+      deleteConfirmBox.classList.remove('hidden');
+    };
+
+    document.getElementById('cancel-delete-btn').onclick = () => {
+      deleteConfirmBox.classList.add('hidden');
+      deleteError.textContent = '';
+    };
+
+    document.getElementById('confirm-delete-btn').onclick = async () => {
+      const btn = document.getElementById('confirm-delete-btn');
+      btn.disabled = true;
+      btn.textContent = 'Eliminando...';
+      deleteError.textContent = '';
+
+      try {
+        const res = await fetch('/api/delete_account', { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) {
+          deleteError.textContent = data.error || 'No se pudo eliminar la cuenta.';
+          return;
+        }
+        currentUser = null;
+        deleteConfirmBox.classList.add('hidden');
+        lobbyScreen.classList.add('hidden');
+        authScreen.classList.remove('hidden');
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
+        loadRanking();
+      } catch (err) {
+        deleteError.textContent = 'Error de conexión al eliminar la cuenta.';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sí, eliminar definitivamente';
+      }
     };
 
     (async () => {
@@ -465,24 +569,23 @@
     const ROWS = 5;
 
     const PLANT_DEFS = {
-      sunflower: {
-        id: 'sunflower',
-        name: 'Girasol',
-        cost: 50,
-        cooldown: 5.0,
-        hp: 300
-      },
       peashooter: {
         id: 'peashooter',
         name: 'Lanzaguisantes',
         cost: 100,
         cooldown: 5.0,
         hp: 300
+      },
+      sunflower: {
+        id: 'sunflower',
+        name: 'Girasol',
+        cost: 50,
+        cooldown: 5.0,
+        hp: 300
       }
     };
 
-    const AVAILABLE_PLANTS = ['sunflower', 'peashooter'];
-
+    let availablePlants = ['peashooter'];
     let state = 'lobby';
     let currentDay = 1;
     let activeRows = [2];
@@ -517,14 +620,17 @@
       currentDay = dayNum;
       if (dayNum === 1) {
         activeRows = [2];
+        availablePlants = ['peashooter'];
         totalZombiesInDay = 5;
-        spawnInterval = 16;
+        spawnInterval = 15;
       } else if (dayNum === 2) {
         activeRows = [1, 2, 3];
+        availablePlants = ['peashooter', 'sunflower'];
         totalZombiesInDay = 8;
         spawnInterval = 14;
       } else {
         activeRows = [0, 1, 2, 3, 4];
+        availablePlants = ['peashooter', 'sunflower'];
         totalZombiesInDay = 8 + dayNum * 2;
         spawnInterval = Math.max(8, 15 - dayNum);
       }
@@ -556,15 +662,23 @@
       spawnedZombies = 0;
       killedZombiesInDay = 0;
       levelTimer = 0;
-      nextSpawnTime = 20;
-      skySunTimer = 5.5;
+      nextSpawnTime = 18;
+      skySunTimer = 4.5;
 
       lobbyScreen.classList.add('hidden');
       winScreen.classList.add('hidden');
       loseScreen.classList.add('hidden');
       state = 'playing';
 
-      bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
+      if (currentDay === 1) {
+        bannerText = 'Día 1 — ¡Planta Lanzaguisantes para defender el jardín!';
+        document.getElementById('lose-tip').textContent =
+          'Recoge los soles que caen del cielo y planta varios Lanzaguisantes en el carril central.';
+      } else {
+        bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
+        document.getElementById('lose-tip').textContent =
+          'Planta Girasoles al fondo para juntar soles y pon Lanzaguisantes en cada carril.';
+      }
       bannerTimer = 2.8;
     }
 
@@ -623,6 +737,14 @@
       const nextDay = currentDay + 1;
       document.getElementById('win-title').textContent = `¡DÍA ${currentDay} COMPLETADO!`;
       document.getElementById('win-msg').textContent = 'Guardando progreso en la nube...';
+
+      const unlockBox = document.getElementById('unlock-box');
+      if (currentDay === 1) {
+        unlockBox.classList.remove('hidden');
+      } else {
+        unlockBox.classList.add('hidden');
+      }
+
       winScreen.classList.remove('hidden');
 
       try {
@@ -662,7 +784,7 @@
       skySunTimer -= dt;
       if (skySunTimer <= 0) {
         spawnSkySun();
-        skySunTimer = 8.5;
+        skySunTimer = currentDay === 1 ? 6.5 : 8.5;
       }
 
       if (spawnedZombies < totalZombiesInDay && levelTimer >= nextSpawnTime) {
@@ -874,7 +996,7 @@
       ctx.textAlign = 'center';
       ctx.fillText(sun, 59, 81);
 
-      AVAILABLE_PLANTS.forEach((id, i) => {
+      availablePlants.forEach((id, i) => {
         const def = PLANT_DEFS[id];
         const cx = 112 + i * 78;
         const cy = 13;
@@ -1177,7 +1299,7 @@
         }
       }
 
-      AVAILABLE_PLANTS.forEach((id, i) => {
+      availablePlants.forEach((id, i) => {
         const cx = 112 + i * 78;
         const cy = 13;
         if (mx >= cx && mx <= cx + 68 && my >= cy && my <= cy + 76) {
