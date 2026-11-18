@@ -102,6 +102,20 @@ def logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/delete_account", methods=["POST"])
+def delete_account():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"ok": False, "error": "No hay sesión activa."}), 401
+
+    try:
+        supabase.table("usuarios").delete().eq("id", user_id).execute()
+        session.clear()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Error al eliminar la cuenta: {str(e)}"}), 500
+
+
 @app.route("/api/me", methods=["GET"])
 def me():
     user_id = session.get("user_id")
