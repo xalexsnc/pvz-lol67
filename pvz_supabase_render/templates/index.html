@@ -323,7 +323,7 @@
       <h1 id="win-title">¡DÍA COMPLETADO!</h1>
       <div id="unlock-box" class="unlock-banner hidden">
         <h3>¡NUEVA PLANTA DESBLOQUEADA: GIRASOL!</h3>
-        <p>Costo: 50 soles — Produce soles adicionales durante la batalla.</p>
+        <p>Costo: 50 soles — Produce 25 soles cada 24 segundos.</p>
       </div>
       <p class="subtitle" id="win-msg">Progreso guardado en tu cuenta.</p>
       <div style="width: 320px;">
@@ -508,7 +508,7 @@
       } catch (e) {}
     })();
 
-    // --- MOTOR DEL JUEGO ---
+    // --- MOTOR DEL JUEGO (VALORES OFICIALES PVZ 1) ---
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
@@ -568,20 +568,33 @@
     const COLS = 9;
     const ROWS = 5;
 
+    // Categorías exactas de recarga en PvZ 1 (Rápida: 7.5s, Lenta: 30s, Muy Lenta: 50s)
+    const COOLDOWN_TIERS = {
+      fast: { duration: 7.5, initial: 0 },
+      slow: { duration: 30.0, initial: 20.0 },
+      very_slow: { duration: 50.0, initial: 35.0 }
+    };
+
     const PLANT_DEFS = {
       peashooter: {
         id: 'peashooter',
         name: 'Lanzaguisantes',
         cost: 100,
-        cooldown: 5.0,
-        hp: 300
+        tier: 'fast',
+        cooldown: COOLDOWN_TIERS.fast.duration,
+        initialCooldown: COOLDOWN_TIERS.fast.initial,
+        hp: 300,
+        fireRate: 1.45 // Cadencia estándar: 1.45 segundos
       },
       sunflower: {
         id: 'sunflower',
         name: 'Girasol',
         cost: 50,
-        cooldown: 5.0,
-        hp: 300
+        tier: 'fast',
+        cooldown: COOLDOWN_TIERS.fast.duration,
+        initialCooldown: COOLDOWN_TIERS.fast.initial,
+        hp: 300,
+        sunInterval: 24.0 // Genera 25 soles cada 24 segundos
       }
     };
 
@@ -589,7 +602,7 @@
     let state = 'lobby';
     let currentDay = 1;
     let activeRows = [2];
-    let sun = 150;
+    let sun = 50;
     let selectedCard = null;
     let shovelActive = false;
     let hoverCell = null;
@@ -610,8 +623,8 @@
     let killedZombiesInDay = 0;
     let levelTimer = 0;
     let nextSpawnTime = 20;
-    let spawnInterval = 15;
-    let skySunTimer = 6;
+    let spawnInterval = 16;
+    let skySunTimer = 8;
     let bannerText = '';
     let bannerTimer = 0;
     let globalTime = 0;
@@ -623,23 +636,24 @@
         activeRows = [2];
         availablePlants = ['peashooter'];
         totalZombiesInDay = 5;
-        spawnInterval = 15;
+        spawnInterval = 18;
       } else if (dayNum === 2) {
         activeRows = [1, 2, 3];
         availablePlants = ['peashooter', 'sunflower'];
         totalZombiesInDay = 8;
-        spawnInterval = 14;
+        spawnInterval = 16;
       } else {
         activeRows = [0, 1, 2, 3, 4];
         availablePlants = ['peashooter', 'sunflower'];
         totalZombiesInDay = 8 + dayNum * 2;
-        spawnInterval = Math.max(8, 15 - dayNum);
+        spawnInterval = Math.max(9, 17 - dayNum);
       }
     }
 
     function startDay(dayNum) {
       configureDay(dayNum);
-      sun = 150;
+      // En Día 1 se inicia con 150 soles (aún no existe Girasol); desde Día 2 se inicia con 50 soles exactos
+      sun = dayNum === 1 ? 150 : 50;
       selectedCard = null;
       shovelActive = false;
 
@@ -651,7 +665,12 @@
       particles = [];
       fallingParts = [];
       floatingTexts = [];
-      cooldowns = { sunflower: 0, peashooter: 0 };
+
+      // Al iniciar el nivel, las plantas rápidas tienen 0s de espera
+      cooldowns = {};
+      availablePlants.forEach(id => {
+        cooldowns[id] = PLANT_DEFS[id].initialCooldown;
+      });
 
       mowers = activeRows.map(r => ({
         row: r,
@@ -664,8 +683,8 @@
       spawnedZombies = 0;
       killedZombiesInDay = 0;
       levelTimer = 0;
-      nextSpawnTime = 18;
-      skySunTimer = 4.5;
+      nextSpawnTime = 20;
+      skySunTimer = 5.0; // Primer sol del cielo para ayudar al arranque; luego cada 8 a 10s
 
       lobbyScreen.classList.add('hidden');
       winScreen.classList.add('hidden');
@@ -679,7 +698,7 @@
       } else {
         bannerText = `Día ${currentDay} — ¡Planta Girasoles y Lanzaguisantes!`;
         document.getElementById('lose-tip').textContent =
-          'Planta Girasoles al fondo para juntar soles y pon Lanzaguisantes en cada carril.';
+          'Empiezas con 50 soles: planta Girasoles al fondo para generar economía y defiende con Lanzaguisantes.';
       }
       bannerTimer = 2.8;
     }
@@ -699,9 +718,9 @@
         x: targetX,
         y: 85,
         targetY,
-        vy: 42,
+        vy: 45,
         value: 25,
-        life: 11,
+        groundLife: 7.5, // Desaparece tras 7 a 8 segundos en el suelo
         bob: Math.random() * Math.PI * 2
       });
     }
@@ -715,14 +734,17 @@
         targetY: y + 20,
         vy: 30,
         value: 25,
-        life: 12,
+        groundLife: 7.5, // Desaparece tras 7 a 8 segundos en el suelo
         bob: 0
       });
     }
 
-    // Zombi Común PvZ 1: 270 PS totales (200 PS efectivos + 70 PS de desangrado sin cabeza)
+    // Zombi Común PvZ 1:
+    // - 200 PS efectivos (10 impactos de 20 PS) + 70 PS de desangrado tras perder cabeza
+    // - Velocidad: ~4.7 segundos por casilla (80 px / 4.7 s ≈ 17.02 px/s -> ~42s en 9 casillas)
     function spawnCommonZombie() {
       const row = activeRows[Math.floor(Math.random() * activeRows.length)];
+      const baseSpeed = CELL_W / 4.7;
       zombies.push({
         row,
         x: 985,
@@ -731,7 +753,7 @@
         maxHp: 270,
         hasArm: true,
         hasHead: true,
-        speed: 12.5,
+        speed: baseSpeed + (Math.random() * 0.8 - 0.4),
         eatTimer: 0,
         walkPhase: Math.random() * 6
       });
@@ -786,10 +808,11 @@
         if (cooldowns[id] > 0) cooldowns[id] = Math.max(0, cooldowns[id] - dt);
       }
 
+      // Soles del cielo: cae uno de 25 puntos cada 8 a 10 segundos
       skySunTimer -= dt;
       if (skySunTimer <= 0) {
         spawnSkySun();
-        skySunTimer = currentDay === 1 ? 6.5 : 8.5;
+        skySunTimer = 8.0 + Math.random() * 2.0;
       }
 
       if (spawnedZombies < totalZombiesInDay && levelTimer >= nextSpawnTime) {
@@ -812,7 +835,7 @@
           if (p.id === 'sunflower') {
             if (p.timer >= p.nextAction) {
               spawnPlantSun(c, r);
-              p.nextAction = p.timer + 19;
+              p.nextAction = p.timer + PLANT_DEFS.sunflower.sunInterval; // 24 segundos
             }
           } else if (p.id === 'peashooter') {
             const hasTarget = zombies.some(
@@ -823,11 +846,12 @@
                 x: GRID_X + c * CELL_W + 60,
                 y: GRID_Y + r * CELL_H + 34,
                 row: r,
-                dmg: 20
+                dmg: 20,
+                ya_impacto: false // Bandera booleana para evitar daño doble
               });
               p.recoil = 1;
               playSound('shoot');
-              p.nextAction = p.timer + (1.35 + Math.random() * 0.15);
+              p.nextAction = p.timer + PLANT_DEFS.peashooter.fireRate; // 1.45 segundos
             }
           }
         }
@@ -835,15 +859,20 @@
 
       for (let i = peas.length - 1; i >= 0; i--) {
         const pea = peas[i];
+        if (pea.ya_impacto) {
+          peas.splice(i, 1);
+          continue;
+        }
+
         pea.x += 340 * dt;
-        let hit = false;
 
         for (const z of zombies) {
-          if (z.row === pea.row && z.hp > 0 && Math.abs(z.x - pea.x) < 22) {
+          if (!pea.ya_impacto && z.row === pea.row && z.hp > 0 && Math.abs(z.x - pea.x) < 22) {
+            pea.ya_impacto = true;
             playSound('hit');
             z.hp -= pea.dmg;
 
-            // Pierde el brazo a los 90 PS de daño (180 PS restantes, 5.º guisante)
+            // Pierde el brazo a los 90 PS de daño (180 PS restantes, 5.º impacto)
             if (z.hasArm && z.hp <= 180) {
               z.hasArm = false;
               fallingParts.push({
@@ -858,7 +887,7 @@
               });
             }
 
-            // Pierde la cabeza a los 200 PS de daño (70 PS restantes, 10.º guisante)
+            // Pierde la cabeza a los 200 PS de daño (70 PS restantes, 10.º impacto)
             if (z.hasHead && z.hp <= 70) {
               z.hasHead = false;
               fallingParts.push({
@@ -884,17 +913,16 @@
                 life: 0.25
               });
             }
-            hit = true;
             break;
           }
         }
-        if (hit || pea.x > 1010) peas.splice(i, 1);
+        if (pea.ya_impacto || pea.x > 1010) peas.splice(i, 1);
       }
 
       for (let i = zombies.length - 1; i >= 0; i--) {
         const z = zombies[i];
 
-        // Fase de desangrado automático tras perder la cabeza (últimos 70 PS)
+        // Desangrado automático tras perder la cabeza (70 PS)
         if (!z.hasHead) {
           z.hp -= 46 * dt;
         }
@@ -912,13 +940,13 @@
           z.eatTimer += dt;
           if (z.eatTimer >= 0.5) {
             z.eatTimer = 0;
-            plant.hp -= 50;
+            plant.hp -= 50; // 100 PS/seg -> planta de 300 PS aguanta 3 segundos
             if (plant.hp <= 0) grid[z.row][col] = null;
           }
         } else {
           const moveSpeed = z.hasHead ? z.speed : z.speed * 0.65;
           z.x -= moveSpeed * dt;
-          z.walkPhase += dt * 4.2;
+          z.walkPhase += dt * 4.5;
         }
 
         if (z.x < GRID_X - 10) {
@@ -943,12 +971,16 @@
         }
       });
 
+      // Soles: caen hasta targetY y permanecen 7.5s en pantalla antes de desaparecer
       for (let i = suns.length - 1; i >= 0; i--) {
         const s = suns[i];
         s.bob += dt * 3;
-        if (s.y < s.targetY) s.y += s.vy * dt;
-        s.life -= dt;
-        if (s.life <= 0) suns.splice(i, 1);
+        if (s.y < s.targetY) {
+          s.y += s.vy * dt;
+        } else {
+          s.groundLife -= dt;
+        }
+        if (s.groundLife <= 0) suns.splice(i, 1);
       }
 
       for (let i = flyingSuns.length - 1; i >= 0; i--) {
@@ -1170,6 +1202,8 @@
       });
 
       suns.forEach(s => {
+        // Parpadeo en los últimos 1.5s antes de desaparecer
+        if (s.groundLife < 1.5 && Math.floor(s.groundLife * 10) % 2 === 0) return;
         const pulse = 1 + Math.sin(s.bob) * 0.08;
         drawSunIcon(s.x, s.y, 23 * pulse, globalTime * 1.2);
       });
@@ -1317,20 +1351,16 @@
       ctx.save();
       ctx.translate(z.x, z.y);
 
-      // Piernas
       ctx.fillStyle = '#263238';
       ctx.fillRect(-10, 12, 8, 16);
       ctx.fillRect(2, 12 + sway * 0.5, 8, 16);
 
-      // Torso (saco marrón)
       ctx.fillStyle = '#4e3c36';
       ctx.fillRect(-14, -20 + sway, 28, 35);
 
-      // Corbata roja
       ctx.fillStyle = '#c62828';
       ctx.fillRect(-3, -15 + sway, 4, 14);
 
-      // Brazo delantero (se pierde a los 90 PS de daño)
       if (z.hasArm) {
         ctx.fillStyle = '#3e2e29';
         ctx.fillRect(-24, -12 + sway, 16, 7);
@@ -1339,12 +1369,10 @@
         ctx.arc(-25, -8.5 + sway, 4.5, 0, Math.PI * 2);
         ctx.fill();
       } else {
-        // Manga rota tras perder el brazo
         ctx.fillStyle = '#2c201c';
         ctx.fillRect(-17, -12 + sway, 5, 7);
       }
 
-      // Cabeza (se pierde a los 200 PS de daño, entrando en desangrado)
       if (z.hasHead) {
         ctx.fillStyle = '#8fa876';
         ctx.beginPath();
@@ -1362,7 +1390,6 @@
         ctx.arc(2, -34 + sway, 1.8, 0, Math.PI * 2);
         ctx.fill();
       } else {
-        // Cuello sin cabeza durante la fase de desangrado
         ctx.fillStyle = '#6d8259';
         ctx.fillRect(-5, -23 + sway, 10, 4);
       }
@@ -1435,12 +1462,17 @@
           if (sun >= def.cost) {
             sun -= def.cost;
             cooldowns[selectedCard] = def.cooldown;
+            // Girasol: primer sol sale entre 3 y 12 segundos tras plantarlo
+            const initialDelay = def.id === 'sunflower'
+              ? 3.0 + Math.random() * 9.0
+              : 0.7;
+
             grid[row][col] = {
               id: def.id,
               hp: def.hp,
               timer: 0,
               recoil: 0,
-              nextAction: def.id === 'sunflower' ? 7 : 0.7
+              nextAction: initialDelay
             };
             selectedCard = null;
             playSound('plant');
